@@ -1,0 +1,13 @@
+# Explicit, for the same reason as the backend: Compose would otherwise name the
+# project after the "frontend" directory and adopt any same-named project's
+# containers as orphans.
+name: pfsense-network-map-frontend
+
+services:
+  web:
+    build: .
+    ports:
+      - "${WEB_PORT:-8011}:80"
+    environment:
+      API_URL: ${API_URL:-http://localhost:8010}
+    restart: unless-stopped

@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<pfsense>
+  <version>22.5</version>
+  <interfaces>
+    <lan><if>em1</if><descr>LAN</descr><enable></enable>
+      <ipaddr>192.168.1.1</ipaddr><subnet>24</subnet></lan>
+  </interfaces>
+  <filter>
+    <rule>
+      <disabled></disabled><type>pass</type><interface>lan</interface>
+      <ipprotocol>inet</ipprotocol><protocol>tcp</protocol>
+      <source><network>lan</network></source>
+      <destination><any></any><port>22</port></destination>
+      <descr>Disabled SSH allow</descr>
+    </rule>
+    <rule>
+      <type>block</type><interface>lan</interface><ipprotocol>inet</ipprotocol>
+      <protocol>tcp</protocol>
+      <source><network>lan</network></source>
+      <destination><any></any><port>22</port></destination>
+      <descr>Block SSH</descr>
+    </rule>
+  </filter>
+</pfsense>

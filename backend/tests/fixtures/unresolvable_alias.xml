@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<pfsense>
+  <version>22.5</version>
+  <interfaces>
+    <lan><if>em1</if><descr>LAN</descr><enable></enable>
+      <ipaddr>192.168.1.1</ipaddr><subnet>24</subnet></lan>
+  </interfaces>
+  <aliases>
+    <alias><name>BLOCKLIST</name><type>urltable</type>
+      <url>https://example.com/list.txt</url><descr>External list</descr></alias>
+  </aliases>
+  <filter>
+    <rule>
+      <type>block</type><interface>lan</interface><ipprotocol>inet</ipprotocol>
+      <protocol>any</protocol>
+      <source><network>lan</network></source>
+      <destination><address>BLOCKLIST</address></destination>
+      <descr>Block bad hosts</descr>
+    </rule>
+    <rule>
+      <type>pass</type><interface>lan</interface><ipprotocol>inet</ipprotocol>
+      <protocol>any</protocol>
+      <source><network>lan</network></source>
+      <destination><any></any></destination>
+      <descr>Default allow LAN</descr>
+    </rule>
+  </filter>
+</pfsense>

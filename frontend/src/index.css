@@ -1,0 +1,111 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/*
+ * The Geist font is imported from main.tsx, not here. Importing it into this
+ * file leaves Tailwind's @import handling in charge, and Vite never rewrites the
+ * relative url(./files/*.woff2) references, so the woff2 files never reach
+ * dist/ and every one of them 404s at runtime.
+ */
+
+/*
+ * Tokens come from design-system/pfsense-network-map/MASTER.md.
+ * Two deliberate departures from that file, both for this product's job:
+ *   - Its "Exaggerated Minimalism" effects (clamp(3rem,10vw,12rem), weight 900)
+ *     are for portfolio and fashion pages. This is a dense read-only ops tool.
+ *   - It proposed loading Fira Sans/Fira Code from the Google Fonts CDN, which
+ *     the offline requirement forbids. Geist ships as an npm package instead,
+ *     with a monospace stack for addresses and ports.
+ */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --font-sans: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", "Menlo", "Consolas", monospace;
+
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
+  --radius-xl: calc(var(--radius) + 6px);
+}
+
+:root {
+  --background: #f8fafc;
+  --foreground: #1e3a8a;
+  --card: #ffffff;
+  --card-foreground: #1e3a8a;
+  --popover: #ffffff;
+  --popover-foreground: #1e3a8a;
+  --primary: #1e40af;
+  --primary-foreground: #ffffff;
+  --secondary: #3b82f6;
+  --secondary-foreground: #ffffff;
+  --muted: #e9eef6;
+  --muted-foreground: #475569;
+  --accent: #d97706;
+  --accent-foreground: #ffffff;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --success: #047857;
+
+  /*
+   * Two border tokens on purpose. --border separates table rows and is
+   * decorative, so the palette's light blue is fine there. --input outlines
+   * form controls, which WCAG 1.4.11 requires to hit 3:1 against the
+   * background; the palette value would have been invisible.
+   */
+  --border: #dbeafe;
+  --input: #8ca3c4;
+  --ring: #1e40af;
+
+  /* Density 8/10 from the design system: dashboard spacing, 8-32px. */
+  --radius: 0.375rem;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans;
+  }
+
+  /* Addresses, ports and CIDRs line up only in a monospace face. */
+  code,
+  .tabular {
+    @apply font-mono;
+  }
+
+  :focus-visible {
+    @apply outline-ring outline-2 outline-offset-2;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

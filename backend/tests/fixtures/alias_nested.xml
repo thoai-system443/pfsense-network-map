@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<pfsense>
+  <version>22.5</version>
+  <interfaces>
+    <lan><if>em1</if><descr>LAN</descr><enable></enable>
+      <ipaddr>192.168.1.1</ipaddr><subnet>24</subnet></lan>
+  </interfaces>
+  <aliases>
+    <alias><name>DB_HOSTS</name><type>host</type>
+      <address>192.168.1.20 192.168.1.21</address><descr>Databases</descr></alias>
+    <alias><name>APP_HOSTS</name><type>host</type>
+      <address>192.168.1.30</address><descr>App servers</descr></alias>
+    <alias><name>TIER_TWO</name><type>host</type>
+      <address>DB_HOSTS APP_HOSTS</address><descr>Level 2</descr></alias>
+    <alias><name>ALL_SERVERS</name><type>host</type>
+      <address>TIER_TWO 192.168.1.40</address><descr>Level 3</descr></alias>
+    <alias><name>MGMT_PORTS</name><type>port</type>
+      <address>22 3389 5900-5910</address><descr>Admin ports</descr></alias>
+    <alias><name>LOOP_A</name><type>host</type><address>LOOP_B</address><descr>a</descr></alias>
+    <alias><name>LOOP_B</name><type>host</type><address>LOOP_A</address><descr>b</descr></alias>
+  </aliases>
+</pfsense>
