@@ -35,6 +35,11 @@ def test_to_spec_of_empty_is_none_marker():
     assert PortSet.empty().to_spec() == "none"
 
 
+def test_to_spec_round_trips_through_parse():
+    for spec in ["any", "none", "443", "80,1000-2000"]:
+        assert PortSet.parse(spec).to_spec() == spec
+
+
 def test_parse_rejects_out_of_range():
     with pytest.raises(ValueError, match="port"):
         PortSet.parse("70000")

@@ -22,6 +22,12 @@ class PortSet:
 
     @classmethod
     def parse(cls, spec: str) -> "PortSet":
+        # Round-trips with to_spec, which emits these two words for the extremes.
+        if spec.strip().lower() == "any":
+            return cls.full()
+        if spec.strip().lower() == "none":
+            return cls.empty()
+
         found: list[Interval] = []
         for part in spec.replace(":", "-").split(","):
             part = part.strip()
