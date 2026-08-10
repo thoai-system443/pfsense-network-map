@@ -15,8 +15,28 @@ from app.parser.types import AddrSpec, FilterRule, ParsedConfig
 ANTI_LOCKOUT_PORTS = "22,80,443"
 
 
+def _candidate_networks(config: ParsedConfig) -> list[tuple[str, str]]:
+    """Every (rule interface name, CIDR) a source address could arrive on.
+
+    VPN tunnels are included because pfSense attaches their rules to the
+    pseudo-interfaces "openvpn" and "enc0", not to a configured interface. Without
+    them, traffic from a tunnel would be evaluated against the WAN ruleset.
+    """
+    out: list[tuple[str, str]] = []
+    for iface in config.interfaces:
+        if iface.ipaddr and iface.subnet is not None:
+            out.append((iface.name, f"{iface.ipaddr}/{iface.subnet}"))
+    for tunnel in config.vpn.tunnels:
+        if not tunnel.interface_name:
+            continue
+        for cidr in [tunnel.tunnel_network, *tunnel.remote_networks]:
+            if cidr:
+                out.append((tunnel.interface_name, cidr))
+    return out
+
+
 def inbound_interface(config: ParsedConfig, source_ip: str) -> str:
-    """Pick the interface whose subnet contains source_ip, longest prefix first."""
+    """Pick the interface whose network contains source_ip, longest prefix first."""
     try:
         address = ipaddress.ip_address(source_ip)
     except ValueError:
@@ -24,17 +44,15 @@ def inbound_interface(config: ParsedConfig, source_ip: str) -> str:
 
     best_name = "wan"
     best_prefix = -1
-    for iface in config.interfaces:
-        if not iface.ipaddr or iface.subnet is None:
-            continue
+    for name, cidr in _candidate_networks(config):
         try:
-            network = ipaddress.ip_network(f"{iface.ipaddr}/{iface.subnet}", strict=False)
+            network = ipaddress.ip_network(cidr, strict=False)
         except ValueError:
             continue
         if network.version != address.version or address not in network:
             continue
         if network.prefixlen > best_prefix:
-            best_name, best_prefix = iface.name, network.prefixlen
+            best_name, best_prefix = name, network.prefixlen
     return best_name
 
 

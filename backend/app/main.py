@@ -1,6 +1,7 @@
 from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.v1 import configs, inventory, maps, query
 from app.settings import settings
 
 app = FastAPI(
@@ -24,5 +25,10 @@ v1 = APIRouter(prefix="/api/v1")
 def health() -> dict[str, str]:
     return {"status": "ok"}
 
+
+v1.include_router(configs.router)
+v1.include_router(inventory.router)
+v1.include_router(maps.router)
+v1.include_router(query.router)
 
 app.include_router(v1)

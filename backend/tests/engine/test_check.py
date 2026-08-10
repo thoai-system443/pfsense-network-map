@@ -79,7 +79,20 @@ def test_trace_lists_every_rule_that_was_examined():
     assert [entry.rule.descr for entry in result.trace][0] == "Soft block SMB, not quick"
 
 
-def test_vpn_source_outside_every_subnet_enters_on_wan():
+def test_source_in_openvpn_tunnel_is_evaluated_against_openvpn_rules():
+    """Tunnel traffic must not fall through to the WAN ruleset."""
     result = check(load("vlan_vpn.xml"), "10.8.0.5", "192.168.1.10", 445, "tcp")
-    assert result.in_interface == "wan"
+    assert result.in_interface == "openvpn"
+    assert result.verdict == "pass"
+    assert result.decided_by.descr == "VPN to LAN"
+
+
+def test_source_in_ipsec_remote_network_uses_the_ipsec_pseudo_interface():
+    result = check(load("vlan_vpn.xml"), "10.20.0.5", "192.168.1.10", 445, "tcp")
+    assert result.in_interface == "enc0"
     assert result.verdict == "block"
+
+
+def test_source_outside_every_known_network_falls_back_to_wan():
+    result = check(load("vlan_vpn.xml"), "8.8.8.8", "192.168.1.10", 445, "tcp")
+    assert result.in_interface == "wan"
