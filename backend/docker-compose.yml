@@ -1,0 +1,24 @@
+# Set explicitly: Compose otherwise derives the project name from the directory,
+# which here is the very generic "backend". Any other project of yours living in
+# a directory of the same name would share this namespace, and its containers
+# would show up here as orphans — one --remove-orphans away from being deleted.
+name: pfsense-network-map-backend
+
+services:
+  api:
+    build: .
+    env_file: .env
+    expose:
+      - "8000"
+    restart: unless-stopped
+
+  nginx:
+    build: ./nginx
+    depends_on:
+      - api
+    ports:
+      - "${API_PORT:-8010}:80"
+    environment:
+      DOCS_USER: ${DOCS_USER}
+      DOCS_PASSWORD: ${DOCS_PASSWORD}
+    restart: unless-stopped
