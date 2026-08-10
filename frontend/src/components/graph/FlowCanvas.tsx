@@ -1,4 +1,4 @@
-import { Background, Controls, ReactFlow } from "@xyflow/react";
+import { Background, Controls, MarkerType, ReactFlow } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useMemo } from "react";
 
@@ -23,10 +23,13 @@ export function FlowCanvas({
   nodes,
   edges,
   onEdgeClick,
+  directed = false,
 }: {
   nodes: GraphNode[];
   edges: CanvasEdge[];
   onEdgeClick?: (edgeId: string) => void;
+  /** Access flows are directional; topology links are not. */
+  directed?: boolean;
 }) {
   const centreId = nodes.find((node) => node.kind === "firewall")?.id ?? null;
   const positions = useMemo(() => radial(nodes, centreId), [nodes, centreId]);
@@ -51,8 +54,11 @@ export function FlowCanvas({
         label: edge.label,
         animated: false,
         style: edge.dashed ? { strokeDasharray: "6 4" } : undefined,
+        // Without an arrowhead a directed graph reads as undirected, which is
+        // the one thing the access map exists to answer.
+        markerEnd: directed ? { type: MarkerType.ArrowClosed } : undefined,
       })),
-    [edges],
+    [edges, directed],
   );
 
   if (nodes.length === 0) {
