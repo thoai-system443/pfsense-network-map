@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<pfsense>
+  <version>22.5</version>
+  <interfaces>
+    <lan><if>em1</if><descr>LAN</descr><enable></enable>
+      <ipaddr>192.168.1.1</ipaddr><subnet>24</subnet></lan>
+    <opt1><if>em2</if><descr>DMZ</descr><enable></enable>
+      <ipaddr>10.10.20.1</ipaddr><subnet>24</subnet></opt1>
+  </interfaces>
+  <filter>
+    <rule>
+      <type>pass</type><interface>lan</interface><ipprotocol>inet</ipprotocol>
+      <protocol>any</protocol>
+      <source><network>lan</network></source>
+      <destination><not></not><network>opt1</network></destination>
+      <descr>LAN to anywhere except DMZ</descr>
+    </rule>
+  </filter>
+</pfsense>

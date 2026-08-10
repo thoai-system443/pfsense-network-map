@@ -1,0 +1,43 @@
+<?xml version="1.0"?>
+<pfsense>
+  <version>22.5</version>
+  <interfaces>
+    <wan><if>em0</if><descr>WAN</descr><enable></enable>
+      <ipaddr>203.0.113.2</ipaddr><subnet>30</subnet></wan>
+    <lan><if>em1</if><descr>LAN</descr><enable></enable>
+      <ipaddr>192.168.1.1</ipaddr><subnet>24</subnet></lan>
+    <opt1><if>em2</if><descr>DMZ</descr><enable></enable>
+      <ipaddr>10.10.20.1</ipaddr><subnet>24</subnet></opt1>
+  </interfaces>
+  <filter>
+    <rule>
+      <floating>yes</floating><type>block</type><interface>lan</interface>
+      <direction>any</direction><ipprotocol>inet</ipprotocol><protocol>tcp</protocol>
+      <source><any></any></source>
+      <destination><any></any><port>445</port></destination>
+      <descr>Soft block SMB, not quick</descr>
+    </rule>
+    <rule>
+      <floating>yes</floating><quick>yes</quick><type>block</type>
+      <interface>lan</interface><direction>any</direction>
+      <ipprotocol>inet</ipprotocol><protocol>tcp</protocol>
+      <source><any></any></source>
+      <destination><any></any><port>23</port></destination>
+      <descr>Hard block telnet, quick</descr>
+    </rule>
+    <rule>
+      <type>pass</type><interface>lan</interface><ipprotocol>inet</ipprotocol>
+      <protocol>tcp</protocol>
+      <source><network>lan</network></source>
+      <destination><network>opt1</network><port>445</port></destination>
+      <descr>Allow LAN to DMZ SMB</descr>
+    </rule>
+    <rule>
+      <type>pass</type><interface>lan</interface><ipprotocol>inet</ipprotocol>
+      <protocol>tcp</protocol>
+      <source><network>lan</network></source>
+      <destination><network>opt1</network><port>23</port></destination>
+      <descr>Allow LAN to DMZ telnet</descr>
+    </rule>
+  </filter>
+</pfsense>

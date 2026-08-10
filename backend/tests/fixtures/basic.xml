@@ -1,0 +1,54 @@
+<?xml version="1.0"?>
+<pfsense>
+  <version>22.5</version>
+  <system>
+    <hostname>fw1</hostname>
+    <domain>example.local</domain>
+  </system>
+  <interfaces>
+    <wan>
+      <if>em0</if>
+      <descr>WAN</descr>
+      <enable></enable>
+      <ipaddr>203.0.113.2</ipaddr>
+      <subnet>30</subnet>
+    </wan>
+    <lan>
+      <if>em1</if>
+      <descr>LAN</descr>
+      <enable></enable>
+      <ipaddr>192.168.1.1</ipaddr>
+      <subnet>24</subnet>
+    </lan>
+  </interfaces>
+  <aliases>
+    <alias>
+      <name>WEB_SERVERS</name>
+      <type>host</type>
+      <address>192.168.1.10 192.168.1.11</address>
+      <descr>Public web servers</descr>
+    </alias>
+  </aliases>
+  <filter>
+    <rule>
+      <tracker>1600000001</tracker>
+      <type>pass</type>
+      <interface>lan</interface>
+      <ipprotocol>inet</ipprotocol>
+      <protocol>tcp</protocol>
+      <source><network>lan</network></source>
+      <destination><any></any><port>443</port></destination>
+      <descr>Allow LAN to any HTTPS</descr>
+    </rule>
+    <rule>
+      <tracker>1600000002</tracker>
+      <type>block</type>
+      <interface>lan</interface>
+      <ipprotocol>inet</ipprotocol>
+      <protocol>tcp</protocol>
+      <source><network>lan</network></source>
+      <destination><any></any><port>23</port></destination>
+      <descr>Block telnet</descr>
+    </rule>
+  </filter>
+</pfsense>

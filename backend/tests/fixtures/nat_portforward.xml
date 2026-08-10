@@ -1,0 +1,45 @@
+<?xml version="1.0"?>
+<pfsense>
+  <version>22.5</version>
+  <interfaces>
+    <wan><if>em0</if><descr>WAN</descr><enable></enable>
+      <ipaddr>203.0.113.2</ipaddr><subnet>30</subnet></wan>
+    <lan><if>em1</if><descr>LAN</descr><enable></enable>
+      <ipaddr>192.168.1.1</ipaddr><subnet>24</subnet></lan>
+  </interfaces>
+  <nat>
+    <rule>
+      <interface>wan</interface><protocol>tcp</protocol>
+      <target>192.168.1.10</target><local-port>8443</local-port>
+      <source><any></any></source>
+      <destination><network>wanip</network><port>443</port></destination>
+      <descr>Publish web server</descr>
+    </rule>
+    <onetoone>
+      <interface>wan</interface>
+      <external>203.0.113.3</external>
+      <source><address>192.168.1.50</address></source>
+      <destination><any></any></destination>
+      <descr>Static NAT for app host</descr>
+    </onetoone>
+    <outbound>
+      <mode>hybrid</mode>
+      <rule>
+        <interface>wan</interface>
+        <source><network>192.168.1.0/24</network></source>
+        <destination><any></any></destination>
+        <target></target>
+        <descr>Masquerade LAN</descr>
+      </rule>
+    </outbound>
+  </nat>
+  <filter>
+    <rule>
+      <type>pass</type><interface>wan</interface><ipprotocol>inet</ipprotocol>
+      <protocol>tcp</protocol>
+      <source><any></any></source>
+      <destination><address>192.168.1.10</address><port>8443</port></destination>
+      <descr>Allow published web server</descr>
+    </rule>
+  </filter>
+</pfsense>
