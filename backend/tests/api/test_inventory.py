@@ -57,4 +57,5 @@ def test_lists_rules_in_evaluation_order_for_an_interface():
 def test_lists_nat_entries():
     config_id = upload("nat_portforward.xml")
     body = client.get(f"/api/v1/configs/{config_id}/nat").json()
-    assert body["port_forwards"][0]["target"] == "192.168.1.10"
+    assert body[0]["firewall"]
+    assert body[0]["port_forwards"][0]["target"] == "192.168.1.10"

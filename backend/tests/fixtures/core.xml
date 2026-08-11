@@ -1,0 +1,47 @@
+<?xml version="1.0"?>
+<pfsense>
+  <version>22.5</version>
+  <system><hostname>fw-core</hostname></system>
+  <interfaces>
+    <!--
+      Shares 10.10.20.0/24 with fw-edge's TRANSIT interface. This is the subnet
+      that makes the two firewalls adjacent, and the one the map has to merge
+      into a single node.
+    -->
+    <wan>
+      <if>em0</if><descr>TRANSIT</descr><enable></enable>
+      <ipaddr>10.10.20.2</ipaddr><subnet>24</subnet>
+      <gateway>EDGE_GW</gateway>
+    </wan>
+    <lan>
+      <if>em1</if><descr>SERVERS</descr><enable></enable>
+      <ipaddr>10.20.5.1</ipaddr><subnet>24</subnet>
+    </lan>
+  </interfaces>
+  <gateways>
+    <gateway_item>
+      <interface>wan</interface>
+      <gateway>10.10.20.1</gateway>
+      <name>EDGE_GW</name>
+      <ipprotocol>inet</ipprotocol>
+      <descr>Back towards the edge firewall</descr>
+      <defaultgw></defaultgw>
+    </gateway_item>
+  </gateways>
+  <filter>
+    <rule>
+      <type>pass</type><interface>wan</interface><ipprotocol>inet</ipprotocol>
+      <protocol>tcp</protocol>
+      <source><any></any></source>
+      <destination><network>lan</network><port>443</port></destination>
+      <descr>HTTPS into the server segment</descr>
+    </rule>
+    <rule>
+      <type>pass</type><interface>lan</interface><ipprotocol>inet</ipprotocol>
+      <protocol>any</protocol>
+      <source><network>lan</network></source>
+      <destination><any></any></destination>
+      <descr>Servers out to anywhere</descr>
+    </rule>
+  </filter>
+</pfsense>

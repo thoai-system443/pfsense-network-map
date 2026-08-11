@@ -6,8 +6,8 @@ from dataclasses import asdict
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from app.api.v1.configs import ConfigDep
-from app.engine import evaluate
+from app.api.v1.configs import ConfigDep, FirewallsDep
+from app.engine import evaluate, fabric
 from app.engine.resolver import AliasCycleError, Resolver
 from app.parser.types import AddrSpec, ParsedConfig
 
@@ -23,6 +23,13 @@ class CheckRequest(BaseModel):
 
 class FromRequest(BaseModel):
     source: str
+    protocol: str = "any"
+
+
+class PathRequest(BaseModel):
+    source: str
+    destination: str
+    port: int | None = None
     protocol: str = "any"
 
 
@@ -90,3 +97,27 @@ def query_to(request: ToRequest, config: ConfigDep) -> list[dict]:
         }
         for region in evaluate.explore_to(config, destination, request.port, request.protocol)
     ]
+
+
+@router.post("/path")
+def path(request: PathRequest, firewalls: FirewallsDep, config: ConfigDep) -> dict:
+    """Follow the packet across every loaded firewall it would cross.
+
+    A verdict of pass means every hop allowed it. The first hop that refuses
+    ends the walk and is the one reported.
+    """
+    source = to_probe_address(config, request.source)
+    destination = to_probe_address(config, request.destination)
+    result = fabric.path_check(firewalls, source, destination, request.port, request.protocol)
+    return {
+        "verdict": result.verdict,
+        "truncated": result.truncated,
+        "stopped_reason": result.stopped_reason,
+        "hops": [
+            {
+                **asdict(hop),
+                "decided_by": asdict(hop.decided_by) if hop.decided_by else None,
+            }
+            for hop in result.hops
+        ],
+    }

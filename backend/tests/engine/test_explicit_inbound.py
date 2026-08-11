@@ -26,9 +26,7 @@ def test_without_an_override_the_source_address_still_decides():
 
 def test_an_override_selects_a_different_ruleset():
     """Same packet, but arriving on TRANSIT: the LAN rule no longer applies."""
-    result = check(
-        load("routed.xml"), "192.168.1.50", "8.8.8.8", 443, "tcp", in_interface="opt1"
-    )
+    result = check(load("routed.xml"), "192.168.1.50", "8.8.8.8", 443, "tcp", in_interface="opt1")
     assert result.in_interface == "opt1"
     assert result.verdict == "block"
     assert result.decided_by is None
