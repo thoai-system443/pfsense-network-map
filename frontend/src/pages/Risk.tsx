@@ -127,37 +127,6 @@ export function RiskPage() {
       </section>
 
       <section className="space-y-2">
-        <h2 className="font-medium">Address space granted to nothing</h2>
-        <p className="max-w-3xl text-sm text-muted-foreground">
-          A rule written wider than the objects that actually exist hands the same access to every
-          address in the gap, the moment anything appears there. That never shows in the rule table.
-        </p>
-        {data.unoccupied_grants.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No unoccupied address space is granted by any pass rule.
-          </p>
-        ) : (
-          <Table
-            label="Address space granted to nothing"
-            headers={["Rule", "Interface", "Side", "Granted", "Unoccupied", "Addresses"]}
-          >
-            {data.unoccupied_grants.map((grant, index) => (
-              <tr key={index} className="align-top">
-                <td className="px-4 py-2">{grant.rule.descr || "(no description)"}</td>
-                <td className="tabular px-4 py-2">{grant.interface}</td>
-                <td className="px-4 py-2">{grant.side}</td>
-                <td className="tabular px-4 py-2">{grant.granted_cidrs.join(", ")}</td>
-                <td className="tabular px-4 py-2">{grant.unoccupied_cidrs.join(", ")}</td>
-                <td className="tabular px-4 py-2 font-medium text-destructive">
-                  {grant.unoccupied_addresses.toLocaleString("en-US")}
-                </td>
-              </tr>
-            ))}
-          </Table>
-        )}
-      </section>
-
-      <section className="space-y-2">
         <h2 className="font-medium">Deny-all checks</h2>
         {data.deny_all.length === 0 ? (
           <p className="text-sm text-muted-foreground">
@@ -181,10 +150,42 @@ export function RiskPage() {
   );
 }
 
+/** True when at least one of the four criteria fired. */
+function isExposed(exposure: Exposure): boolean {
+  return (
+    exposure.reaches_other_subnets_any_port.length > 0 ||
+    exposure.reaches_internet ||
+    exposure.reachable_from_all_internal ||
+    exposure.reachable_from_internet
+  );
+}
+
 function ExposureTable({ exposures }: { exposures: Exposure[] }) {
+  const exposed = exposures.filter(isExposed);
+
+  if (exposures.length > 0 && exposed.length === 0) {
+    return (
+      <section className="space-y-2">
+        <h2 className="font-medium">Exposure by object</h2>
+        <p className="text-sm text-muted-foreground">
+          None of the {exposures.length} object{exposures.length === 1 ? "" : "s"} checked matches
+          any of the four criteria.
+        </p>
+      </section>
+    );
+  }
+
   return (
     <section className="space-y-2">
       <h2 className="font-medium">Exposure by object</h2>
+      {/*
+        The count matters: a short table with no total reads as "the analysis
+        found little", when it actually means "most objects came back clean".
+      */}
+      <p className="text-sm text-muted-foreground">
+        {exposed.length} of {exposures.length} objects match at least one criterion. Objects with
+        nothing flagged are left out.
+      </p>
       <Table
         label="Exposure by object"
         headers={[
@@ -196,7 +197,7 @@ function ExposureTable({ exposures }: { exposures: Exposure[] }) {
           "Reachable from the internet",
         ]}
       >
-        {exposures.map((exposure) => (
+        {exposed.map((exposure) => (
           <tr key={exposure.subject.id} className="align-top">
             <td className="px-4 py-2 font-medium">{exposure.subject.label}</td>
             <td className="tabular px-4 py-2">{exposure.subject.cidrs.join(", ")}</td>

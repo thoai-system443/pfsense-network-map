@@ -55,6 +55,16 @@ const report: RiskReport = {
       reachable_from_internet: true,
       inbound_internet_ports: "8443",
     },
+    {
+      subject: { id: "opt2", label: "GUEST", kind: "interface", cidrs: ["172.16.5.0/24"] },
+      reaches_other_subnets_any_port: [],
+      reaches_internet: false,
+      internet_ports: "",
+      reachable_from_all_internal: false,
+      inbound_internal_ports: "",
+      reachable_from_internet: false,
+      inbound_internet_ports: "",
+    },
   ],
   unoccupied_grants: [
     {
@@ -93,16 +103,34 @@ describe("RiskPage", () => {
     expect(row).toHaveTextContent("8443");
   });
 
-  it("reports unoccupied address space with a readable count", async () => {
+  it("leaves out objects with nothing flagged", async () => {
     vi.spyOn(api, "getRiskReport").mockResolvedValue(report);
     renderPage();
-    expect(await screen.findByText(/16,776,960/)).toBeInTheDocument();
+    await screen.findByText("LAN");
+    expect(screen.queryByText("GUEST")).not.toBeInTheDocument();
   });
 
-  it("names the rule behind an unoccupied grant", async () => {
+  it("says how many objects were checked, so an empty table is not ambiguous", async () => {
     vi.spyOn(api, "getRiskReport").mockResolvedValue(report);
     renderPage();
-    expect(await screen.findByText(/Postgres from the 10 space/)).toBeInTheDocument();
+    expect(await screen.findByText(/2 of 3 objects/i)).toBeInTheDocument();
+  });
+
+  it("says outright when no object is exposed", async () => {
+    vi.spyOn(api, "getRiskReport").mockResolvedValue({
+      ...report,
+      exposures: [report.exposures[2]],
+    });
+    renderPage();
+    expect(await screen.findByText(/none of the 1 object/i)).toBeInTheDocument();
+  });
+
+  it("no longer shows the unoccupied address space section", async () => {
+    vi.spyOn(api, "getRiskReport").mockResolvedValue(report);
+    renderPage();
+    await screen.findByText("LAN");
+    expect(screen.queryByText(/granted to nothing/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/16,776,960/)).not.toBeInTheDocument();
   });
 
   it("lists deny-all findings with the reason", async () => {
@@ -118,8 +146,7 @@ describe("RiskPage", () => {
       deny_all: [],
     });
     renderPage();
-    expect(await screen.findByText(/no unoccupied address space/i)).toBeInTheDocument();
-    expect(screen.getByText(/every block-all rule/i)).toBeInTheDocument();
+    expect(await screen.findByText(/every block-all rule/i)).toBeInTheDocument();
   });
 
   it("searches which sources reach a port", async () => {

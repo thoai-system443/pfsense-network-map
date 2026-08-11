@@ -2,6 +2,7 @@
 
 | Version | Date | Changes |
 |---|---|---|
+| 1.3.0 | 2026-08-10 | Risk: chỉ liệt kê object có rủi ro, bỏ mục địa chỉ trống |
 | 1.2.0 | 2026-08-10 | Thêm trang Risk: 4 tiêu chí phơi nhiễm, tra theo port, địa chỉ trống, deny-all |
 | 1.1.0 | 2026-08-10 | Access map: kéo node tự do, click node để lọc luồng liên quan |
 | 1.0.0 | 2026-08-10 | Kiến trúc ban đầu: SPA tĩnh, API_URL đọc lúc runtime |
@@ -86,6 +87,13 @@ cùng một chuỗi (ví dụ một CIDR) xuất hiện ở nhiều bảng.
 
 Cột phơi nhiễm hiển thị kèm **danh sách port**, không chỉ dấu tick. Biết "lộ ra
 internet" mà không biết cổng nào thì vẫn phải mở lại trang Search để tra.
+
+Bảng chỉ liệt kê object khớp ít nhất một trong bốn tiêu chí. Phải in kèm tổng số
+object đã kiểm ("3 of 5") — một bảng ngắn không có tổng đọc như thể phân tích
+tìm được ít, trong khi thực ra phần lớn object sạch.
+
+Backend vẫn tính và trả `unoccupied_grants` trong `/risk`; chỉ phần hiển thị bị
+bỏ.
 
 ## Gotchas
 
