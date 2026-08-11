@@ -231,18 +231,18 @@ def port_reachability(
     config: ParsedConfig,
     port: int,
     protocol: str = "any",
-    internal_only: bool = True,
+    hide_internet_destinations: bool = True,
 ) -> list[PortAccess]:
     """Every source that reaches anything at all on this port.
 
-    internal_only drops the internet from **both** ends: it is not used as a
-    source, and destinations are clipped to the site's own address space. Only
-    dropping it as a source would still leave rows reading "LAN -> 0.0.0.0/0",
-    which makes the internal-only label a lie.
+    hide_internet_destinations drops only the **outbound** direction: rows whose
+    destination is out on the internet. A default-allow-outbound rule otherwise
+    fills the table with "LAN reaches the whole internet on 443", which buries
+    the rows that matter.
 
-    The default is internal-only because that is the question being asked most
-    of the time: which of my own machines can get at this. Untick it to see the
-    inbound exposure as well.
+    Traffic coming **in** from the internet is kept either way — that is inbound
+    exposure, the most important thing this search can surface. So is anything
+    internal to internal.
     """
     resolver = Resolver(config)
     zones = _zone_sets(config, resolver)
@@ -251,7 +251,9 @@ def port_reachability(
 
     origins = [(zone_id, label, addresses) for zone_id, label, addresses in zones]
     internet_probe = _probe(internal.complement())
-    if internet_probe and not internal_only:
+    if internet_probe:
+        # Always a source: internet -> something inside is exactly what an
+        # operator needs to see, and hiding it would be the wrong default.
         origins.append(("internet", INTERNET_LABEL, internal.complement()))
 
     out: list[PortAccess] = []
@@ -266,7 +268,7 @@ def port_reachability(
                 continue
 
             destinations = region.addresses
-            if internal_only:
+            if hide_internet_destinations:
                 reachable = _region_addresses(region).intersect(internal)
                 if reachable.is_empty():
                     continue

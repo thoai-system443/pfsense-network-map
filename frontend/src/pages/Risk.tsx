@@ -22,10 +22,9 @@ export function RiskPage() {
   const { configId = "" } = useParams<{ configId: string }>();
   const [port, setPort] = useState("");
   const [protocol, setProtocol] = useState("tcp");
-  // Defaults to on: "which of my own machines can get at this" is the question
-  // asked most of the time, and leaving the internet in buries it under rows
-  // reading "LAN -> the whole internet".
-  const [internalOnly, setInternalOnly] = useState(true);
+  // Hides only the outbound direction. Traffic coming in from the internet is
+  // never hidden: that is the exposure worth knowing about.
+  const [hideOutbound, setHideOutbound] = useState(true);
   const [searched, setSearched] = useState<string | null>(null);
 
   const report = useQuery({
@@ -34,7 +33,7 @@ export function RiskPage() {
   });
 
   const portSearch = useMutation<PortAccess[], Error>({
-    mutationFn: () => getPortAccess(configId, Number(port), protocol, internalOnly),
+    mutationFn: () => getPortAccess(configId, Number(port), protocol, hideOutbound),
     onSuccess: () => setSearched(port),
   });
 
@@ -67,9 +66,9 @@ export function RiskPage() {
         <h2 className="font-medium">Who reaches a port</h2>
         <p className="max-w-3xl text-sm text-muted-foreground">
           Every source allowed to reach anything at all on this port, across all destinations.
-          <strong> Internal only</strong> drops the internet from both ends: it is not used as a
-          source, and destinations are clipped to your own address space. Untick it to see inbound
-          exposure from the internet as well.
+          <strong> Hide traffic out to the internet</strong> drops only the outbound direction, so a
+          default-allow-outbound rule does not bury the rest. Traffic coming <em>in</em> from the
+          internet is always shown.
         </p>
         <form
           className="flex flex-wrap items-end gap-4"
@@ -103,15 +102,18 @@ export function RiskPage() {
               ))}
             </select>
           </label>
-          <label className="flex cursor-pointer items-center gap-2 pb-1.5 text-sm" htmlFor="risk-internal">
+          <label
+            className="flex cursor-pointer items-center gap-2 pb-1.5 text-sm"
+            htmlFor="risk-hide-outbound"
+          >
             <input
-              id="risk-internal"
+              id="risk-hide-outbound"
               type="checkbox"
               className="size-4 cursor-pointer accent-[var(--primary)]"
-              checked={internalOnly}
-              onChange={(event) => setInternalOnly(event.target.checked)}
+              checked={hideOutbound}
+              onChange={(event) => setHideOutbound(event.target.checked)}
             />
-            Internal only
+            Hide traffic out to the internet
           </label>
           <Button type="submit" disabled={!port || portSearch.isPending}>
             Who reaches it
@@ -128,7 +130,7 @@ export function RiskPage() {
           (portSearch.data.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               Nothing reaches port {searched} on {protocol}
-              {internalOnly ? " from inside the network" : ""}.
+              {hideOutbound ? ", ignoring traffic out to the internet" : ""}.
             </p>
           ) : (
             <Table

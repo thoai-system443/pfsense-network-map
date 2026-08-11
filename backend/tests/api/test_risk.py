@@ -34,18 +34,22 @@ def test_port_search_lists_sources():
     assert "DMZ" in {r["source_label"] for r in body}
 
 
-def test_port_search_excludes_the_internet_by_default():
+def test_port_search_keeps_inbound_internet_exposure_by_default():
     config_id = upload("risky.xml")
     body = client.get(f"/api/v1/configs/{config_id}/risk/port?port=8443&protocol=tcp").json()
-    assert "Internet" not in {r["source_label"] for r in body}
-
-
-def test_port_search_can_include_the_internet_on_request():
-    config_id = upload("risky.xml")
-    body = client.get(
-        f"/api/v1/configs/{config_id}/risk/port?port=8443&protocol=tcp&internal_only=false"
-    ).json()
     assert "Internet" in {r["source_label"] for r in body}
+
+
+def test_port_search_can_show_outbound_internet_traffic_on_request():
+    config_id = upload("risky.xml")
+    hidden = client.get(f"/api/v1/configs/{config_id}/risk/port?port=443&protocol=tcp").json()
+    shown = client.get(
+        f"/api/v1/configs/{config_id}/risk/port"
+        "?port=443&protocol=tcp&hide_internet_destinations=false"
+    ).json()
+    assert sum(len(r["destination_cidrs"]) for r in shown) > sum(
+        len(r["destination_cidrs"]) for r in hidden
+    )
 
 
 def test_port_search_rejects_a_port_out_of_range():

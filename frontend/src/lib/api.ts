@@ -87,8 +87,9 @@ export const getPortAccess = (
   id: string,
   port: number,
   protocol: string,
-  internalOnly: boolean,
+  hideInternetDestinations: boolean,
 ) =>
   request<PortAccess[]>(
-    `/configs/${id}/risk/port?port=${port}&protocol=${protocol}&internal_only=${internalOnly}`,
+    `/configs/${id}/risk/port?port=${port}&protocol=${protocol}` +
+      `&hide_internet_destinations=${hideInternetDestinations}`,
   );

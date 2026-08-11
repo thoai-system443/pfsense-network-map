@@ -17,12 +17,14 @@ def by_port(
     firewalls: FirewallsDep,
     port: int = Query(ge=0, le=MAX_PORT),
     protocol: str = "any",
-    internal_only: bool = True,
+    hide_internet_destinations: bool = True,
 ) -> list[dict]:
     return [
         {**asdict(entry), "firewall": firewall.name}
         for firewall in firewalls
-        for entry in risk.port_reachability(firewall.config, port, protocol, internal_only)
+        for entry in risk.port_reachability(
+            firewall.config, port, protocol, hide_internet_destinations
+        )
     ]
 
 

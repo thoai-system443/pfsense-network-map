@@ -177,7 +177,7 @@ describe("RiskPage", () => {
   });
 });
 
-describe("the internal-only switch", () => {
+describe("the hide-outbound switch", () => {
   const rows = [
     {
       firewall: "fw-edge",
@@ -201,28 +201,30 @@ describe("the internal-only switch", () => {
 
   it("is on by default", async () => {
     await search("5432");
-    expect(screen.getByLabelText(/internal only/i)).toBeChecked();
+    expect(screen.getByLabelText(/hide traffic out to the internet/i)).toBeChecked();
   });
 
-  it("asks the backend for internal-only results", async () => {
+  it("asks the backend to hide outbound internet traffic", async () => {
     const spy = await search("5432");
     await userEvent.click(screen.getByRole("button", { name: /who reaches/i }));
     expect(spy).toHaveBeenCalledWith("abc", 5432, "tcp", true);
   });
 
-  it("includes the internet once unticked", async () => {
+  it("shows outbound traffic once unticked", async () => {
     const spy = await search("5432");
-    await userEvent.click(screen.getByLabelText(/internal only/i));
+    await userEvent.click(screen.getByLabelText(/hide traffic out to the internet/i));
     await userEvent.click(screen.getByRole("button", { name: /who reaches/i }));
     expect(spy).toHaveBeenCalledWith("abc", 5432, "tcp", false);
   });
 
-  it("says the empty result was an internal-only search", async () => {
+  it("says the empty result ignored outbound internet traffic", async () => {
     vi.spyOn(api, "getRiskReport").mockResolvedValue(report);
     vi.spyOn(api, "getPortAccess").mockResolvedValue([]);
     renderPage();
     await userEvent.type(await screen.findByLabelText(/^port$/i), "9999");
     await userEvent.click(screen.getByRole("button", { name: /who reaches/i }));
-    expect(await screen.findByText(/from inside the network/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/ignoring traffic out to the internet/i),
+    ).toBeInTheDocument();
   });
 });

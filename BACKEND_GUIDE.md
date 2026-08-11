@@ -2,7 +2,7 @@
 
 | Version | Date | Changes |
 |---|---|---|
-| 1.9.0 | 2026-08-10 | `risk/port` thêm `internal_only`, mặc định bật |
+| 1.9.0 | 2026-08-11 | `risk/port` thêm `hide_internet_destinations`, mặc định bật |
 | 1.8.0 | 2026-08-10 | Cache parse CIDR, dựng sẵn tập địa chỉ của region, nội tuyến phép giao hình chữ nhật |
 | 1.7.0 | 2026-08-10 | Cache resolver và explore_from: access-graph 1.34s → 0.13s trên 3000 rule |
 | 1.6.0 | 2026-08-10 | Workspace nhiều firewall, bảng định tuyến, tính đường đi xuyên firewall |
@@ -217,10 +217,17 @@ loại `host`/`network`.
 | `exposures` | 4 tiêu chí cho từng đối tượng |
 | `port_reachability` | Nguồn nào tới được bất cứ đâu trên một port |
 
-`port_reachability(internal_only=True)` — mặc định — bỏ internet ở **cả hai
-đầu**: không dùng làm nguồn, và cắt phần đích nằm ngoài dải địa chỉ của hệ thống.
-Chỉ bỏ ở đầu nguồn sẽ để lại những dòng `LAN → 0.0.0.0/0`, khiến nhãn "nội bộ"
-thành sai. Bỏ tick để xem cả phơi nhiễm từ internet vào.
+`port_reachability(hide_internet_destinations=True)` — mặc định — chỉ cắt
+**chiều đi ra**: bỏ những dòng có đích nằm ngoài dải địa chỉ của hệ thống. Một
+rule cho phép ra internet mặc định sẽ nhồi bảng bằng "LAN tới cả internet trên
+443" và vùi mất phần còn lại.
+
+**Chiều từ internet đi vào luôn được giữ**, ở cả hai chế độ. Đó là phơi nhiễm
+inbound — thứ quan trọng nhất mà tra cứu này nói được. Luồng nội bộ ↔ nội bộ
+cũng giữ nguyên.
+
+Bản đầu tiên bỏ internet ở **cả hai** đầu và vì thế giấu mất chính thông tin
+đáng giá nhất. Đừng "tối ưu" lại theo hướng đó.
 | `deny_all_audit` | Block-all không chặn thật, và rule chết sau block-all |
 
 Điểm cần biết khi đọc kết quả:

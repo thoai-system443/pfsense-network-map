@@ -93,14 +93,19 @@ class TestPortReachability:
         """
         assert risk.port_reachability(load("basic.xml"), 9999, "tcp") == []
 
-    def test_internal_only_drops_the_internet_as_a_source(self):
-        """risky.xml publishes DB_SERVER on 8443 to anything on the internet."""
-        everywhere = risk.port_reachability(load("risky.xml"), 8443, "tcp", internal_only=False)
-        internal = risk.port_reachability(load("risky.xml"), 8443, "tcp", internal_only=True)
-        assert "Internet" in {r.source_label for r in everywhere}
-        assert "Internet" not in {r.source_label for r in internal}
+    def test_inbound_exposure_from_the_internet_is_never_hidden(self):
+        """risky.xml publishes DB_SERVER on 8443. That row has to survive.
 
-    def test_internal_only_clips_destinations_to_the_internal_space(self):
+        Dropping it would hide the single most important thing this search can
+        say: something on the internet reaches something inside.
+        """
+        for hide in (True, False):
+            results = risk.port_reachability(
+                load("risky.xml"), 8443, "tcp", hide_internet_destinations=hide
+            )
+            assert "Internet" in {r.source_label for r in results}
+
+    def test_outbound_traffic_to_the_internet_is_dropped(self):
         """Asserted as containment, not as a literal CIDR string.
 
         LAN is allowed to any:443, but the DMZ slice is settled by an earlier
@@ -120,18 +125,22 @@ class TestPortReachability:
                 for cidr in r.destination_cidrs
             )
 
-        assert outside(risk.port_reachability(load("risky.xml"), 443, "tcp", internal_only=False))
+        assert outside(
+            risk.port_reachability(load("risky.xml"), 443, "tcp", hide_internet_destinations=False)
+        )
         assert not outside(
-            risk.port_reachability(load("risky.xml"), 443, "tcp", internal_only=True)
+            risk.port_reachability(load("risky.xml"), 443, "tcp", hide_internet_destinations=True)
         )
 
-    def test_internal_only_keeps_a_purely_internal_flow_intact(self):
-        results = risk.port_reachability(load("risky.xml"), 5432, "tcp", internal_only=True)
+    def test_an_internal_to_internal_flow_is_kept(self):
+        results = risk.port_reachability(
+            load("risky.xml"), 5432, "tcp", hide_internet_destinations=True
+        )
         assert "DMZ" in {r.source_label for r in results}
 
-    def test_internal_only_is_the_default(self):
-        assert risk.port_reachability(load("risky.xml"), 8443, "tcp") == risk.port_reachability(
-            load("risky.xml"), 8443, "tcp", internal_only=True
+    def test_hiding_outbound_internet_is_the_default(self):
+        assert risk.port_reachability(load("risky.xml"), 443, "tcp") == risk.port_reachability(
+            load("risky.xml"), 443, "tcp", hide_internet_destinations=True
         )
 
     def test_a_wide_open_zone_shows_up_for_every_port(self):
