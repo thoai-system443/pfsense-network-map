@@ -155,74 +155,70 @@ nào phải chờ giai đoạn sau mới đúng.
 
 ### Giai đoạn 0 — Đưa 6 probe thành test hồi quy
 
-- [ ] Chép `/tmp/audit_probe.py` thành `tests/engine/test_search_correctness.py`
-- [ ] Đánh dấu `@pytest.mark.xfail(strict=True)` cho từng test chưa sửa
-- [ ] Chạy: cả 6 phải **xfail**, không test nào xpass
-- [ ] Commit — từ đây mọi lỗi đã có lưới an toàn, và bất kỳ ai sửa đúng sẽ thấy
+- [x] Chép `/tmp/audit_probe.py` thành `tests/engine/test_search_correctness.py`
+- [x] Đánh dấu `@pytest.mark.xfail(strict=True)` cho từng test chưa sửa
+- [x] Chạy: cả 6 phải **xfail**, không test nào xpass
+- [x] Commit — từ đây mọi lỗi đã có lưới an toàn, và bất kỳ ai sửa đúng sẽ thấy
       `strict=True` bắt lỗi ngay khi quên bỏ dấu xfail
 
 ### Giai đoạn 1 — NAT vào explore (lỗi 4)
 
-- [ ] `explore_from` áp `nat.translate_destination` giống `check`
-- [ ] `explore_to` áp NAT ngược cho đích
-- [ ] Bỏ xfail cho probe 4
-- [ ] **Bổ sung test bất biến trên fixture CÓ NAT** —
+- [x] `explore_from` áp `nat.translate_destination` giống `check`
+- [x] `explore_to` áp NAT ngược cho đích
+- [x] Bỏ xfail cho probe 4
+- [x] **Bổ sung test bất biến trên fixture CÓ NAT** —
       `test_explore_agrees_with_point_check` hiện chỉ chạy trên fixture không NAT,
       đó là lý do lỗi này lọt qua
 
 ### Giai đoạn 2 — Chuỗi firewall đi theo đích đã dịch (lỗi 5)
 
-- [ ] `check` trả về đích và port đã dịch (đã có trong `CheckResult`)
-- [ ] `path_check` dùng đích đã dịch cho `routing.lookup` **và** cho chặng sau
-- [ ] Ghi cả đích gốc lẫn đích đã dịch vào từng `Hop`
-- [ ] Bỏ xfail cho probe 5
-- [ ] Thêm fixture `nat_chain_edge.xml` / `nat_chain_core.xml` vào `tests/fixtures/`
+- [x] `check` trả về đích và port đã dịch (đã có trong `CheckResult`)
+- [x] `path_check` dùng đích đã dịch cho `routing.lookup` **và** cho chặng sau
+- [x] Ghi cả đích gốc lẫn đích đã dịch vào từng `Hop`
+- [x] Bỏ xfail cho probe 5
+- [x] Thêm fixture `nat_chain_edge.xml` / `nat_chain_core.xml` vào `tests/fixtures/`
 
 ### Giai đoạn 3 — Nguồn internet trong `explore_to` (lỗi 3)
 
-- [ ] `explore_to` thêm một nguồn giả "internet" = phần bù của toàn bộ dải nội bộ,
+- [x] `explore_to` thêm một nguồn giả "internet" = phần bù của toàn bộ dải nội bộ,
       đi vào qua interface có default route
-- [ ] Bỏ xfail cho probe 3
-- [ ] Kiểm tra tab **To** trên giao diện có hiện nguồn internet
+- [x] Bỏ xfail cho probe 3
+- [x] Kiểm tra tab **To** trên giao diện có hiện nguồn internet
 
 ### Giai đoạn 4 — IPv6 (lỗi 6)
 
-- [ ] `fabric` phát hiện họ địa chỉ từ đầu vào thay vì cố định `FAMILY = 4`
-- [ ] Nếu là IPv6: trả `stopped_reason` nói rõ "chưa hỗ trợ IPv6 cho phân tích
+- [x] `fabric` phát hiện họ địa chỉ từ đầu vào thay vì cố định `FAMILY = 4`
+- [x] Nếu là IPv6: trả `stopped_reason` nói rõ "chưa hỗ trợ IPv6 cho phân tích
       nhiều firewall" thay vì lý do sai
-- [ ] Bỏ xfail cho probe 6
-- [ ] Ghi giới hạn IPv6 vào README và `BACKEND_GUIDE.md`
+- [x] Bỏ xfail cho probe 6
+- [x] Ghi giới hạn IPv6 vào README và `BACKEND_GUIDE.md`
 
-### Giai đoạn 5 — Protocol (lỗi 2) — *chờ Q2*
+### Giai đoạn 5 — Protocol (lỗi 2) — **xong** (đã chọn A)
 
-Nội dung phụ thuộc câu trả lời Q2. Nếu chọn A:
-
-- [ ] `check` chạy vòng qua `[tcp, udp, icmp]` khi `protocol="any"`
-- [ ] `CheckResult` thêm `per_protocol: dict[str, verdict]`
-- [ ] Verdict tổng: `pass` nếu tất cả pass, `block` nếu tất cả block, `partial`
+- [x] `check` chạy vòng qua `[tcp, udp, icmp]` khi `protocol="any"`
+- [x] `CheckResult` thêm `per_protocol: dict[str, verdict]`
+- [x] Verdict tổng: `pass` nếu tất cả pass, `block` nếu tất cả block, `partial`
       nếu lẫn lộn — và giao diện phải hiển thị `partial` khác hẳn `pass`
-- [ ] Bỏ xfail cho probe 2
+- [x] Bỏ xfail cho probe 2
 
-### Giai đoạn 6 — Subnet (lỗi 1) — *chờ Q1*
+### Giai đoạn 6 — Subnet (lỗi 1) — **xong** (đã chọn A)
 
-Nội dung phụ thuộc câu trả lời Q1. Nếu chọn A, đây là giai đoạn lớn nhất:
-
-- [ ] `check` nhận `IpSet` thay vì `str` cho nguồn và đích
-- [ ] Trả về **danh sách vùng** `(tập nguồn, tập đích, verdict, rule)` thay vì một
+- [x] `check` nhận `IpSet` thay vì `str` cho nguồn và đích
+- [x] Trả về **danh sách vùng** `(tập nguồn, tập đích, verdict, rule)` thay vì một
       verdict — dùng lại `RectSet` đã có
-- [ ] `path_check` truyền tập qua từng chặng
-- [ ] Giao diện: Path check và Across firewalls hiển thị bảng vùng khi đầu vào là
+- [x] `path_check` truyền tập qua từng chặng
+- [x] Giao diện: Path check và Across firewalls hiển thị bảng vùng khi đầu vào là
       tập, hiển thị verdict đơn khi đầu vào là host
-- [ ] Bỏ xfail cho probe 1
+- [x] Bỏ xfail cho probe 1
 
 ### Giai đoạn 7 — Chốt
 
-- [ ] Xoá toàn bộ `xfail`; 6 test phải xanh thật
-- [ ] Chạy lại bất biến `explore ≡ check` trên **mọi** fixture, kể cả NAT và
+- [x] Xoá toàn bộ `xfail`; 6 test phải xanh thật
+- [x] Chạy lại bất biến `explore ≡ check` trên **mọi** fixture, kể cả NAT và
       nhiều firewall
-- [ ] Đo lại hiệu năng: giai đoạn 5 và 6 nhân số lần đánh giá lên, kiểm tra
+- [x] Đo lại hiệu năng: giai đoạn 5 và 6 nhân số lần đánh giá lên, kiểm tra
       `access-graph` và `risk` không vượt quá ngưỡng cũ
-- [ ] Cập nhật `BACKEND_GUIDE.md`: phần "explore ≡ check" hiện đang khẳng định một
+- [x] Cập nhật `BACKEND_GUIDE.md`: phần "explore ≡ check" hiện đang khẳng định một
       bất biến mà code chưa giữ
 
 ---
@@ -233,3 +229,25 @@ Bất biến `explore_from ≡ check` **có** test, và test đó **xanh** suố
 chạy trên hai fixture không có NAT. Một bất biến chỉ mạnh bằng tập dữ liệu nó
 được kiểm trên đó. Giai đoạn 7 vì vậy bắt buộc chạy bất biến trên mọi fixture,
 không phải trên fixture được chọn lọc.
+
+---
+
+## Kết quả
+
+Cả 6 lỗi đã sửa và có test hồi quy xanh thật (không còn `xfail`). Ngoài 6 lỗi
+trong bản rà soát, việc chạy bất biến trên mọi fixture còn lộ thêm ba thứ:
+
+1. Bản sửa lỗi 4 (alias địa chỉ public trong `explore_from`) **thêm** vùng thay
+   vì **thay** vùng cũ, làm hai vùng chồng nhau và mâu thuẫn verdict. Đã trừ
+   trước khi thêm.
+2. NAT chỉ dịch được khi đích là một địa chỉ — một dải trải qua hai port forward
+   bị bỏ dịch. Đã thay bằng `nat.split_destinations()`.
+3. Lỗi 2 (protocol) còn nguyên ở `explore_from` / `explore_to`, tức tab From và
+   To, chứ không chỉ ở `check`. Đã duyệt từng giao thức rồi gộp.
+
+Đo lại sau khi xong: `access-graph` 0.027s → 0.033s, `risk.exposures`
+0.014s → 0.028s trên config 3000 rule. Kích thước đồ thị không đổi.
+
+Đã kiểm chứng trên trình duyệt thật cả bốn tab: bảng vùng tách `.50` khỏi phần
+còn lại của /24, `PARTIAL` hiện màu khác `pass` kèm breakdown ba giao thức, cột
+Protocol ở tab From, và bảng vùng ở tab Across firewalls.

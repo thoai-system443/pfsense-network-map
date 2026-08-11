@@ -2,6 +2,7 @@
 
 | Version | Date | Changes |
 |---|---|---|
+| 1.7.0 | 2026-08-11 | Search: bảng vùng cho subnet, `partial` cho protocol=any, cột Protocol |
 | 1.6.0 | 2026-08-11 | Who reaches a port: thêm ô "Hide traffic out to the internet", mặc định bật |
 | 1.5.0 | 2026-08-10 | Access map: chuột phải để ẩn zone. Bảng Inventory giới hạn 300 dòng |
 | 1.4.0 | 2026-08-10 | Nạp nhiều firewall, tab Across firewalls, cột Firewall trong Inventory/Risk |
@@ -108,6 +109,27 @@ file cần chọn.
 
 Tab đầu của Search là "Across firewalls" (đi hết chuỗi). Ba tab còn lại vẫn tính
 trên **một** firewall — hữu ích khi muốn soi riêng một bộ rule.
+
+### Search có hai dạng kết quả, và `partial` phải trông khác `pass`
+
+`/query/check` và `/query/path` trả `kind: "point"` hoặc `kind: "regions"`. Nhập
+một host thì được verdict đơn kèm trace; nhập subnet/alias/interface thì được
+**bảng vùng**, mỗi dòng một phần của không gian với verdict riêng. Dòng
+`192.168.1.50/32 → BLOCK` bên cạnh phần còn lại của /24 `→ PASS` chính là thứ mà
+verdict đơn che mất.
+
+Với `protocol=any`, backend trả `partial` khi các giao thức không đồng ý nhau.
+Màu của `partial` **không** dùng màu của `pass` — đọc nhầm partial thành "được
+phép" đúng là lỗi cần chặn. Kèm theo là một banner nói thẳng "Partial, not
+allowed" và bảng breakdown từng giao thức.
+
+Khi có breakdown, dòng "Decided by rule #…" đơn lẻ bị ẩn: nó lấy từ
+`decided_by` tổng, nên với `partial` nó nói "no rule matched" ngay bên dưới
+breakdown vừa chỉ rõ tcp được rule #1 cho qua — hai câu mâu thuẫn trên cùng màn
+hình.
+
+Cột "Protocol" ở tab From/To hiện `all` khi vùng đúng cho mọi giao thức, và hiện
+tên giao thức khi vùng chỉ đúng cho riêng nó.
 
 ## Hiệu năng: chỗ nặng không nằm ở GPU
 

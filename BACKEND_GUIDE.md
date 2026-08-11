@@ -2,6 +2,7 @@
 
 | Version | Date | Changes |
 |---|---|---|
+| 1.10.0 | 2026-08-11 | Search trả kết quả theo vùng: subnet, protocol, NAT theo tập, chặng theo tập |
 | 1.9.0 | 2026-08-11 | `risk/port` thêm `hide_internet_destinations`, mặc định bật |
 | 1.8.0 | 2026-08-10 | Cache parse CIDR, dựng sẵn tập địa chỉ của region, nội tuyến phép giao hình chữ nhật |
 | 1.7.0 | 2026-08-10 | Cache resolver và explore_from: access-graph 1.34s → 0.13s trên 3000 rule |
@@ -162,8 +163,40 @@ về một bộ rule cụ thể. Khả năng tới được xuyên firewall là 
 
 `explore_from` / `explore_to` chạy đúng luật trên nhưng trên toàn bộ không gian
 (địa chỉ × port) bằng phép trừ tập hai chiều, nên kết quả đầy đủ chứ không phải
-liệt kê mẫu. Test `test_explore_agrees_with_point_check_on_sampled_points` chốt
-rằng hai đường tính này luôn cho cùng kết quả.
+liệt kê mẫu.
+
+### Bất biến `explore ≡ check`
+
+Hai đường tính này phải luôn cho cùng kết quả. Bất biến đó **từng có test và test
+đó xanh suốt**, nhưng chỉ chạy trên hai fixture không có NAT — nên nó không phát
+hiện được rằng `explore_from` bỏ qua NAT hoàn toàn. Một bất biến chỉ mạnh bằng
+tập dữ liệu nó được kiểm trên đó.
+
+`tests/engine/test_search_correctness.py` nay chạy bất biến trên **mọi** fixture
+trong cây, với cả `protocol="any"`, và cho cả `check_regions` lẫn
+`path_check_regions`. Khi thêm fixture mới, nó tự động được đưa vào.
+
+### Ba thứ "any" và "subnet" từng che giấu
+
+1. **`protocol="any"` không phải một câu hỏi.** Một luật chỉ mở `tcp` không nói gì
+   về `udp`. `check` duyệt riêng ba giao thức và trả `partial` khi lẫn lộn, kèm
+   `per_protocol`. `explore_from` / `explore_to` cũng vậy: vùng nào giống hệt ở
+   cả ba giao thức thì gộp lại (`protocol=None`), vùng nào lệch thì tách và gắn
+   nhãn.
+2. **Subnet là một tập, không phải một địa chỉ.** `check_regions()` phân hoạch
+   `nguồn × đích` và trả về từng vùng với verdict riêng — một host bị cách ly
+   trong /24 được cho qua sẽ hiện thành vùng `block` riêng.
+3. **NAT áp theo tập.** `nat.split_destinations()` cắt tập đích theo đúng thứ tự
+   luật, nên một dải trải qua hai port forward khác nhau được dịch riêng từng
+   phần thay vì bị bỏ qua.
+
+`fabric.path_check_regions()` truyền tập qua từng chặng:
+`routing.split_by_route()` cắt tập đích theo tuyến, mỗi vùng mang chuỗi chặng
+riêng. Hai host cùng subnet có thể vào ở hai firewall khác nhau và bị chặn ở hai
+chặng khác nhau — cả hai đều hiện.
+
+API `/query/check` và `/query/path` trả `kind: "point"` khi cả nguồn lẫn đích là
+một địa chỉ (kèm trace đầy đủ), `kind: "regions"` khi có bên là tập.
 
 ## Quy ước
 

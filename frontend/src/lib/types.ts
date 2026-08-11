@@ -1,4 +1,4 @@
-export type Verdict = "pass" | "block" | "reject";
+export type Verdict = "pass" | "block" | "reject" | "partial";
 
 /**
  * A rule can also be "match": a floating shaper rule that assigns a queue and
@@ -179,7 +179,11 @@ export interface TraceEntry {
 }
 
 export interface CheckResult {
+  kind: "point";
   verdict: Verdict;
+  /** Per-protocol answers when the query asked for "any". */
+  per_protocol: Record<string, Verdict> | null;
+  per_protocol_rules: Record<string, RuleRef | null> | null;
   decided_by: RuleRef | null;
   in_interface: string;
   translated_address: string | null;
@@ -188,11 +192,51 @@ export interface CheckResult {
   trace: TraceEntry[];
 }
 
+/** One part of the source x destination space, with the rule that decided it. */
+export interface PathRegion {
+  sources: string[];
+  destinations: string[];
+  verdict: Verdict;
+  decided_by: RuleRef | null;
+  translated_address: string | null;
+  translated_port: number | null;
+  translated_via: string | null;
+}
+
+export interface CheckRegions {
+  kind: "regions";
+  in_interface: string;
+  unresolved: boolean;
+  translated_address: string | null;
+  translated_port: number | null;
+  regions: PathRegion[];
+}
+
+export type CheckResponse = CheckResult | CheckRegions;
+
+export interface PathRegionResult {
+  sources: string[];
+  destinations: string[];
+  verdict: Verdict | "unrouted";
+  truncated: boolean;
+  stopped_reason: string | null;
+  hops: Hop[];
+}
+
+export interface PathRegions {
+  kind: "regions";
+  regions: PathRegionResult[];
+}
+
+export type PathResponse = (PathResult & { kind: "point" }) | PathRegions;
+
 export interface Region {
   addresses: string[];
   ports: string;
   verdict: Verdict;
   decided_by: RuleRef | null;
+  /** Set when the region only holds for one protocol; null means all of them. */
+  protocol: string | null;
 }
 
 export interface SourceRegion {
@@ -200,6 +244,7 @@ export interface SourceRegion {
   addresses: string[];
   verdict: Verdict;
   decided_by: RuleRef | null;
+  protocol: string | null;
 }
 
 export interface RiskSubject {

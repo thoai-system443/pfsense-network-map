@@ -2,13 +2,13 @@ import { apiUrl } from "./config";
 import type {
   AccessEdge,
   Alias,
-  CheckResult,
+  CheckResponse,
   ConfigMeta,
   FilterRule,
   GraphNode,
   Interface,
   NatConfig,
-  PathResult,
+  PathResponse,
   PortAccess,
   Region,
   RiskReport,
@@ -46,18 +46,28 @@ export function uploadConfig(file: File): Promise<ConfigMeta> {
 export function addFirewall(id: string, file: File): Promise<ConfigMeta> {
   const form = new FormData();
   form.append("file", file);
-  return request<ConfigMeta>(`/configs/${id}/firewalls`, { method: "POST", body: form });
+  return request<ConfigMeta>(`/configs/${id}/firewalls`, {
+    method: "POST",
+    body: form,
+  });
 }
 
-export const getConfigMeta = (id: string) => request<ConfigMeta>(`/configs/${id}`);
-export const getInterfaces = (id: string) => request<Interface[]>(`/configs/${id}/interfaces`);
+export const getConfigMeta = (id: string) =>
+  request<ConfigMeta>(`/configs/${id}`);
+export const getInterfaces = (id: string) =>
+  request<Interface[]>(`/configs/${id}/interfaces`);
 export const getAliases = (id: string, resolved = false) =>
   request<Alias[]>(`/configs/${id}/aliases?resolved=${resolved}`);
 export const getRules = (id: string, iface?: string) =>
-  request<FilterRule[]>(`/configs/${id}/rules${iface ? `?interface=${iface}` : ""}`);
-export const getNat = (id: string) => request<NatConfig[]>(`/configs/${id}/nat`);
+  request<FilterRule[]>(
+    `/configs/${id}/rules${iface ? `?interface=${iface}` : ""}`,
+  );
+export const getNat = (id: string) =>
+  request<NatConfig[]>(`/configs/${id}/nat`);
 export const getTopology = (id: string) =>
-  request<{ nodes: GraphNode[]; edges: TopologyEdge[] }>(`/configs/${id}/topology`);
+  request<{ nodes: GraphNode[]; edges: TopologyEdge[] }>(
+    `/configs/${id}/topology`,
+  );
 export const getAccessGraph = (id: string, protocol: string) =>
   request<{ nodes: GraphNode[]; edges: AccessEdge[] }>(
     `/configs/${id}/access-graph?protocol=${protocol}`,
@@ -65,23 +75,36 @@ export const getAccessGraph = (id: string, protocol: string) =>
 
 export const queryCheck = (
   id: string,
-  body: { source: string; destination: string; port: number | null; protocol: string },
-) => postJson<CheckResult>(`/configs/${id}/query/check`, body);
+  body: {
+    source: string;
+    destination: string;
+    port: number | null;
+    protocol: string;
+  },
+) => postJson<CheckResponse>(`/configs/${id}/query/check`, body);
 
-export const queryFrom = (id: string, body: { source: string; protocol: string }) =>
-  postJson<Region[]>(`/configs/${id}/query/from`, body);
+export const queryFrom = (
+  id: string,
+  body: { source: string; protocol: string },
+) => postJson<Region[]>(`/configs/${id}/query/from`, body);
 
 export const queryPath = (
   id: string,
-  body: { source: string; destination: string; port: number | null; protocol: string },
-) => postJson<PathResult>(`/configs/${id}/query/path`, body);
+  body: {
+    source: string;
+    destination: string;
+    port: number | null;
+    protocol: string;
+  },
+) => postJson<PathResponse>(`/configs/${id}/query/path`, body);
 
 export const queryTo = (
   id: string,
   body: { destination: string; port: number | null; protocol: string },
 ) => postJson<SourceRegion[]>(`/configs/${id}/query/to`, body);
 
-export const getRiskReport = (id: string) => request<RiskReport>(`/configs/${id}/risk`);
+export const getRiskReport = (id: string) =>
+  request<RiskReport>(`/configs/${id}/risk`);
 
 export const getPortAccess = (
   id: string,

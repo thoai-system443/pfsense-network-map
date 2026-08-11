@@ -37,6 +37,7 @@ afterEach(() => vi.restoreAllMocks());
 describe("SearchPage", () => {
   it("opens on the cross-firewall walk and reports every hop", async () => {
     vi.spyOn(api, "queryPath").mockResolvedValue({
+      kind: "point",
       verdict: "block",
       truncated: false,
       stopped_reason: null,
@@ -76,6 +77,7 @@ describe("SearchPage", () => {
 
   it("says when the walk left the loaded firewalls", async () => {
     vi.spyOn(api, "queryPath").mockResolvedValue({
+      kind: "point",
       verdict: "pass",
       truncated: true,
       stopped_reason: "next hop 203.0.113.1 belongs to a device that is not loaded here",
@@ -91,6 +93,9 @@ describe("SearchPage", () => {
 
   it("shows the verdict and the deciding rule for a path check", async () => {
     vi.spyOn(api, "queryCheck").mockResolvedValue({
+      kind: "point",
+      per_protocol: null,
+      per_protocol_rules: null,
       verdict: "pass",
       decided_by: rule,
       in_interface: "lan",
@@ -112,6 +117,9 @@ describe("SearchPage", () => {
 
   it("reports the translated destination when NAT applies", async () => {
     vi.spyOn(api, "queryCheck").mockResolvedValue({
+      kind: "point",
+      per_protocol: null,
+      per_protocol_rules: null,
       verdict: "pass",
       decided_by: rule,
       in_interface: "wan",
@@ -131,8 +139,14 @@ describe("SearchPage", () => {
 
   it("lists reachable regions on the From tab", async () => {
     vi.spyOn(api, "queryFrom").mockResolvedValue([
-      { addresses: ["0.0.0.0/0"], ports: "443", verdict: "pass", decided_by: rule },
-      { addresses: ["0.0.0.0/0"], ports: "0-442", verdict: "block", decided_by: null },
+      { addresses: ["0.0.0.0/0"], ports: "443", verdict: "pass", decided_by: rule, protocol: "tcp" },
+      {
+        addresses: ["0.0.0.0/0"],
+        ports: "0-442",
+        verdict: "block",
+        decided_by: null,
+        protocol: null,
+      },
     ]);
     renderPage();
     await userEvent.click(screen.getByRole("tab", { name: /^from$/i }));
@@ -145,7 +159,13 @@ describe("SearchPage", () => {
 
   it("lists sources grouped by interface on the To tab", async () => {
     vi.spyOn(api, "queryTo").mockResolvedValue([
-      { in_interface: "lan", addresses: ["192.168.1.0/24"], verdict: "pass", decided_by: rule },
+      {
+        in_interface: "lan",
+        addresses: ["192.168.1.0/24"],
+        verdict: "pass",
+        decided_by: rule,
+        protocol: null,
+      },
     ]);
     renderPage();
     await userEvent.click(screen.getByRole("tab", { name: /^to$/i }));
@@ -157,6 +177,9 @@ describe("SearchPage", () => {
 
   it("warns when a result depends on an alias it could not resolve", async () => {
     vi.spyOn(api, "queryCheck").mockResolvedValue({
+      kind: "point",
+      per_protocol: null,
+      per_protocol_rules: null,
       verdict: "pass",
       decided_by: rule,
       in_interface: "lan",
@@ -183,6 +206,116 @@ describe("SearchPage", () => {
     await userEvent.click(screen.getByRole("button", { name: /^check$/i }));
 
     expect(await screen.findByText(/cannot resolve 'nope'/)).toBeInTheDocument();
+  });
+
+  it("does not present a partial answer as a pass", async () => {
+    vi.spyOn(api, "queryCheck").mockResolvedValue({
+      kind: "point",
+      verdict: "partial",
+      per_protocol: { tcp: "pass", udp: "block", icmp: "block" },
+      per_protocol_rules: { tcp: rule, udp: null, icmp: null },
+      decided_by: rule,
+      in_interface: "lan",
+      translated_address: null,
+      translated_port: null,
+      unresolved: false,
+      trace: [],
+    });
+    renderPage();
+    await userEvent.click(screen.getByRole("tab", { name: /path check/i }));
+    await userEvent.type(screen.getByLabelText(/^source$/i), "192.168.1.50");
+    await userEvent.type(screen.getByLabelText(/^destination$/i), "8.8.8.8");
+    await userEvent.click(screen.getByRole("button", { name: /^check$/i }));
+
+    expect(await screen.findByText(/partial, not allowed/i)).toBeInTheDocument();
+    // The headline is the thing that must not read "pass"; the breakdown below
+    // legitimately says tcp passed.
+    expect(screen.getByText("partial")).toBeInTheDocument();
+    const udp = screen.getByText("udp", { selector: "span" });
+    expect(udp.closest("li")).toHaveTextContent("block");
+  });
+
+  it("shows a region table when the source is a subnet", async () => {
+    vi.spyOn(api, "queryCheck").mockResolvedValue({
+      kind: "regions",
+      in_interface: "lan",
+      unresolved: false,
+      translated_address: null,
+      translated_port: null,
+      regions: [
+        {
+          sources: ["192.168.1.50/32"],
+          destinations: ["8.8.8.8/32"],
+          verdict: "block",
+          decided_by: null,
+          translated_address: null,
+          translated_port: null,
+          translated_via: null,
+        },
+        {
+          sources: ["192.168.1.0/25"],
+          destinations: ["8.8.8.8/32"],
+          verdict: "pass",
+          decided_by: rule,
+          translated_address: null,
+          translated_port: null,
+          translated_via: null,
+        },
+      ],
+    });
+    renderPage();
+    await userEvent.click(screen.getByRole("tab", { name: /path check/i }));
+    await userEvent.type(screen.getByLabelText(/^source$/i), "192.168.1.0/24");
+    await userEvent.type(screen.getByLabelText(/^destination$/i), "8.8.8.8");
+    await userEvent.click(screen.getByRole("button", { name: /^check$/i }));
+
+    expect(await screen.findByText("192.168.1.50/32")).toBeInTheDocument();
+    expect(screen.getByText("192.168.1.0/25")).toBeInTheDocument();
+    expect(screen.getByText("block")).toBeInTheDocument();
+  });
+
+  it("shows one row per region on the cross-firewall walk when the input is a set", async () => {
+    vi.spyOn(api, "queryPath").mockResolvedValue({
+      kind: "regions",
+      regions: [
+        {
+          sources: ["192.168.1.0/25"],
+          destinations: ["10.20.5.10/32"],
+          verdict: "pass",
+          truncated: false,
+          stopped_reason: null,
+          hops: [
+            {
+              firewall_id: "fw-0",
+              firewall_name: "fw-edge",
+              in_interface: "lan",
+              verdict: "pass",
+              decided_by: rule,
+              out_interface: "opt1",
+              next_hop: "10.10.20.2",
+              translated_address: null,
+              translated_port: null,
+            },
+          ],
+        },
+        {
+          sources: ["192.168.1.128/25"],
+          destinations: ["10.20.5.10/32"],
+          verdict: "block",
+          truncated: false,
+          stopped_reason: null,
+          hops: [],
+        },
+      ],
+    });
+    renderPage();
+    await userEvent.type(screen.getByLabelText(/^source$/i), "192.168.1.0/24");
+    await userEvent.type(screen.getByLabelText(/^destination$/i), "10.20.5.10");
+    await userEvent.click(screen.getByRole("button", { name: /^check$/i }));
+
+    expect(await screen.findByText("192.168.1.0/25")).toBeInTheDocument();
+    expect(screen.getByText("192.168.1.128/25")).toBeInTheDocument();
+    expect(screen.getByText(/fw-edge \(lan\)/)).toBeInTheDocument();
   });
 
   it("prefills the source from the query string so Inventory can link here", () => {

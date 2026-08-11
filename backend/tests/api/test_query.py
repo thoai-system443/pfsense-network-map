@@ -77,3 +77,63 @@ def test_unusable_source_returns_400():
         json={"source": "not-an-address", "protocol": "tcp"},
     )
     assert response.status_code == 400
+
+
+def test_check_of_a_subnet_returns_regions_not_one_verdict():
+    config_id = upload("basic.xml")
+    body = client.post(
+        f"/api/v1/configs/{config_id}/query/check",
+        json={
+            "source": "192.168.1.0/24",
+            "destination": "8.8.8.8",
+            "port": 443,
+            "protocol": "tcp",
+        },
+    ).json()
+    assert body["kind"] == "regions"
+    assert body["regions"]
+    assert all("sources" in region and "verdict" in region for region in body["regions"])
+
+
+def test_check_of_one_host_still_returns_a_point_verdict():
+    config_id = upload("basic.xml")
+    body = client.post(
+        f"/api/v1/configs/{config_id}/query/check",
+        json={"source": "192.168.1.50", "destination": "8.8.8.8", "port": 443, "protocol": "tcp"},
+    ).json()
+    assert body["kind"] == "point"
+    assert body["verdict"] == "pass"
+
+
+def test_check_with_protocol_any_reports_each_protocol():
+    config_id = upload("basic.xml")
+    body = client.post(
+        f"/api/v1/configs/{config_id}/query/check",
+        json={"source": "192.168.1.50", "destination": "8.8.8.8", "port": 443, "protocol": "any"},
+    ).json()
+    assert set(body["per_protocol"]) == {"tcp", "udp", "icmp"}
+    assert body["verdict"] in {"pass", "block", "partial"}
+
+
+def test_path_of_a_subnet_returns_regions():
+    config_id = upload("routed.xml")
+    body = client.post(
+        f"/api/v1/configs/{config_id}/query/path",
+        json={
+            "source": "192.168.1.0/24",
+            "destination": "10.10.20.5",
+            "port": 443,
+            "protocol": "tcp",
+        },
+    ).json()
+    assert body["kind"] == "regions"
+    assert body["regions"]
+
+
+def test_from_tags_the_protocol_when_a_region_is_protocol_specific():
+    config_id = upload("basic.xml")
+    body = client.post(
+        f"/api/v1/configs/{config_id}/query/from",
+        json={"source": "192.168.1.50", "protocol": "any"},
+    ).json()
+    assert all("protocol" in region for region in body)
