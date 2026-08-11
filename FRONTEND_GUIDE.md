@@ -2,6 +2,7 @@
 
 | Version | Date | Changes |
 |---|---|---|
+| 1.1.0 | 2026-08-10 | Access map: kéo node tự do, click node để lọc luồng liên quan |
 | 1.0.0 | 2026-08-10 | Kiến trúc ban đầu: SPA tĩnh, API_URL đọc lúc runtime |
 
 ## Stack
@@ -59,6 +60,23 @@ control đạt tương phản 3:1 với nền — giá trị trong palette sẽ 
 - Địa chỉ, CIDR và port dùng class `.tabular` (font mono) để căn cột thẳng hàng.
 - Bảng dữ liệu giữ tĩnh, không animation.
 
+## Access map: kéo và lọc
+
+Node kéo được tự do; vị trí giữ trong state của `PositionedCanvas`. Click một
+node thì chỉ giữ lại các cạnh chạm node đó và ẩn những node còn lại; click lại
+node đó, click ra nền, hoặc bấm "Show all zones" để bỏ lọc.
+
+Lọc **ẩn** node chứ không loại khỏi mảng. Loại khỏi mảng sẽ khiến layout dựng
+lại và xoá sạch vị trí người dùng vừa kéo. `FlowCanvas` nhận `visibleNodeIds` và
+`visibleEdgeIds`; `null` nghĩa là hiện tất cả.
+
+Layout chỉ dựng lại khi **tập id node** đổi, thực hiện bằng `key` trên
+`PositionedCanvas`. Đừng thay bằng `useEffect` phụ thuộc mảng `nodes` — identity
+của mảng đổi mỗi lần cha re-render.
+
+Node đang focus luôn hiển thị kể cả khi không có luồng nào, nếu không thì click
+vào một zone không có luồng sẽ làm chính nó biến mất ngay dưới con trỏ.
+
 ## Gotchas
 
 - **`docker compose restart` không nạp lại env.** Dùng `up -d` để tạo lại container.
@@ -72,6 +90,10 @@ control đạt tương phản 3:1 với nền — giá trị trong palette sẽ 
 - **React Flow đo kích thước container lúc mount.** jsdom không có
   `ResizeObserver` và báo mọi element là 0x0, nên `src/vitest.setup.ts` phải stub
   cả ba: `ResizeObserver`, `offsetWidth`, `offsetHeight`.
+- **Kiểm chứng kéo node bằng script phải chờ React re-render.** Đọc
+  `node.style.transform` ngay sau khi bắn `mouseup` luôn trả về vị trí cũ và làm
+  ta tưởng kéo hỏng. Chờ một nhịp (`setTimeout`) rồi mới đọc. React Flow v12 gắn
+  `mousedown.drag` — dùng `MouseEvent`, không phải `PointerEvent`.
 - **React Flow không render nhãn cạnh trong jsdom** vì node chưa được đo. Đó là
   một phần lý do trang Access map có thêm danh sách "Allowed flows" bên dưới
   canvas — lý do chính là canvas không đọc được bằng screen reader.

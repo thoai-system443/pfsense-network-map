@@ -78,6 +78,78 @@ describe("AccessMapPage", () => {
     expect(await screen.findByText(/Allow LAN to any HTTPS/)).toBeInTheDocument();
   });
 
+  describe("focusing a zone", () => {
+    const threeZones = {
+      nodes: [
+        { id: "lan", label: "LAN", kind: "interface" as const, subnet: "192.168.1.0/24" },
+        { id: "dmz", label: "DMZ", kind: "interface" as const, subnet: "10.10.20.0/24" },
+        { id: "internet", label: "Internet", kind: "internet" as const, subnet: null },
+      ],
+      edges: [
+        { source: "lan", target: "internet", ports: "443", rules: [] },
+        { source: "dmz", target: "internet", ports: "80", rules: [] },
+      ],
+    };
+
+    /** The label also appears in the focus banner, so scope to the canvas node. */
+    function zoneNode(label: string) {
+      const match = screen
+        .getAllByText(label)
+        .find((element) => element.closest(".react-flow__node"));
+      if (!match) throw new Error(`no canvas node labelled ${label}`);
+      return match;
+    }
+
+    async function focusLan() {
+      vi.spyOn(api, "getAccessGraph").mockResolvedValue(threeZones);
+      renderPage();
+      await screen.findByText("LAN → Internet");
+      await userEvent.click(zoneNode("LAN"));
+    }
+
+    it("keeps only the flows that touch the focused zone", async () => {
+      await focusLan();
+      expect(screen.getByText("LAN → Internet")).toBeInTheDocument();
+      expect(screen.queryByText("DMZ → Internet")).not.toBeInTheDocument();
+    });
+
+    it("hides zones that the focused zone does not reach", async () => {
+      await focusLan();
+      expect(screen.queryByText("DMZ")).not.toBeInTheDocument();
+      expect(screen.getByText("Internet")).toBeInTheDocument();
+    });
+
+    it("says which zone is focused and offers a way out", async () => {
+      await focusLan();
+      expect(screen.getByRole("button", { name: /show all zones/i })).toBeInTheDocument();
+    });
+
+    it("clicking the same zone again shows everything", async () => {
+      await focusLan();
+      await userEvent.click(zoneNode("LAN"));
+      expect(screen.getByText("DMZ → Internet")).toBeInTheDocument();
+    });
+
+    it("the clear control shows everything again", async () => {
+      await focusLan();
+      await userEvent.click(screen.getByRole("button", { name: /show all zones/i }));
+      expect(screen.getByText("DMZ → Internet")).toBeInTheDocument();
+    });
+
+    it("focusing a zone with no flows leaves only that zone", async () => {
+      vi.spyOn(api, "getAccessGraph").mockResolvedValue({
+        ...threeZones,
+        edges: [{ source: "dmz", target: "internet", ports: "80", rules: [] }],
+      });
+      renderPage();
+      await screen.findByText("DMZ → Internet");
+      await userEvent.click(zoneNode("LAN"));
+      expect(zoneNode("LAN")).toBeInTheDocument();
+      expect(screen.queryByText("DMZ → Internet")).not.toBeInTheDocument();
+      expect(screen.getByText(/no flows touch/i)).toBeInTheDocument();
+    });
+  });
+
   it("names zones by their display label, never by the raw id", async () => {
     vi.spyOn(api, "getAccessGraph").mockResolvedValue({
       nodes: [
