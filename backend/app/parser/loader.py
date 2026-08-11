@@ -15,6 +15,7 @@ from defusedxml.common import DefusedXmlException
 from app.parser.aliases import parse_aliases
 from app.parser.interfaces import parse_interfaces
 from app.parser.nat import parse_nat
+from app.parser.routing import parse_gateways, parse_static_routes
 from app.parser.rules import parse_rules
 from app.parser.types import ParsedConfig
 from app.parser.vpn import parse_vpn
@@ -79,5 +80,7 @@ def parse_config(data: bytes) -> ParsedConfig:
     config.rules = parse_rules(root, warnings)
     config.nat = parse_nat(root, warnings)
     config.vpn = parse_vpn(root, warnings)
+    config.gateways = parse_gateways(root, warnings)
+    config.static_routes = parse_static_routes(root, warnings)
     config.warnings = warnings.items
     return config

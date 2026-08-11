@@ -108,6 +108,22 @@ class VpnTunnel(BaseModel):
     remote_networks: list[str] = Field(default_factory=list)
 
 
+class Gateway(BaseModel):
+    name: str
+    interface: str
+    address: str
+    default: bool = False
+    disabled: bool = False
+    descr: str = ""
+
+
+class StaticRoute(BaseModel):
+    network: str
+    gateway: str
+    disabled: bool = False
+    descr: str = ""
+
+
 class VpnConfig(BaseModel):
     tunnels: list[VpnTunnel] = Field(default_factory=list)
 
@@ -120,6 +136,8 @@ class ParsedConfig(BaseModel):
     rules: list[FilterRule] = Field(default_factory=list)
     nat: NatConfig = Field(default_factory=NatConfig)
     vpn: VpnConfig = Field(default_factory=VpnConfig)
+    gateways: list[Gateway] = Field(default_factory=list)
+    static_routes: list[StaticRoute] = Field(default_factory=list)
     warnings: list[ParseWarning] = Field(default_factory=list)
 
     def interface_by_name(self, name: str) -> Interface | None:

@@ -1,0 +1,60 @@
+<?xml version="1.0"?>
+<pfsense>
+  <version>22.5</version>
+  <system><hostname>fw-edge</hostname></system>
+  <interfaces>
+    <wan>
+      <if>em0</if><descr>WAN</descr><enable></enable>
+      <ipaddr>203.0.113.2</ipaddr><subnet>30</subnet>
+      <gateway>WAN_GW</gateway>
+    </wan>
+    <lan>
+      <if>em1</if><descr>LAN</descr><enable></enable>
+      <ipaddr>192.168.1.1</ipaddr><subnet>24</subnet>
+    </lan>
+    <opt1>
+      <if>em2</if><descr>TRANSIT</descr><enable></enable>
+      <ipaddr>10.10.20.1</ipaddr><subnet>24</subnet>
+    </opt1>
+  </interfaces>
+  <gateways>
+    <gateway_item>
+      <interface>wan</interface>
+      <gateway>203.0.113.1</gateway>
+      <name>WAN_GW</name>
+      <weight>1</weight>
+      <ipprotocol>inet</ipprotocol>
+      <descr>Upstream</descr>
+      <defaultgw></defaultgw>
+    </gateway_item>
+    <gateway_item>
+      <interface>opt1</interface>
+      <gateway>10.10.20.2</gateway>
+      <name>CORE_ROUTER</name>
+      <weight>1</weight>
+      <ipprotocol>inet</ipprotocol>
+      <descr>Core router towards the second firewall</descr>
+    </gateway_item>
+  </gateways>
+  <staticroutes>
+    <route>
+      <network>10.20.0.0/16</network>
+      <gateway>CORE_ROUTER</gateway>
+      <descr>Everything behind the core router</descr>
+    </route>
+    <route>
+      <network>10.20.5.0/24</network>
+      <gateway>CORE_ROUTER</gateway>
+      <descr>A more specific slice of the same space</descr>
+    </route>
+  </staticroutes>
+  <filter>
+    <rule>
+      <type>pass</type><interface>lan</interface><ipprotocol>inet</ipprotocol>
+      <protocol>any</protocol>
+      <source><network>lan</network></source>
+      <destination><any></any></destination>
+      <descr>LAN to anywhere</descr>
+    </rule>
+  </filter>
+</pfsense>
