@@ -2,6 +2,7 @@
 
 | Version | Date | Changes |
 |---|---|---|
+| 1.8.0 | 2026-08-10 | Cache parse CIDR, dựng sẵn tập địa chỉ của region, nội tuyến phép giao hình chữ nhật |
 | 1.7.0 | 2026-08-10 | Cache resolver và explore_from: access-graph 1.34s → 0.13s trên 3000 rule |
 | 1.6.0 | 2026-08-10 | Workspace nhiều firewall, bảng định tuyến, tính đường đi xuyên firewall |
 | 1.5.0 | 2026-08-10 | Bỏ hẳn `unoccupied_grants` khỏi engine và API |
@@ -84,13 +85,14 @@ bỏ qua đúng tầng gây lỗi.
 Đo trên config tổng hợp 16 interface / 3000 rule / 60 alias (`/tmp/big.xml`
 sinh bằng script trong lịch sử commit):
 
-| Endpoint | Trước | Sau |
+| Endpoint | Ban đầu | Hiện tại |
 |---|---|---|
-| `access-graph` | 1.34s | **0.13s** |
-| `risk` | 0.74s | 0.54s |
+| `access-graph` | 1.34s | **0.08s** |
+| `risk` | 0.74s | **0.29s** |
+| `risk/port` | 0.05s | 0.05s |
 | `topology` | 0.01s | 0.01s |
 
-Hai chỗ tốn, tìm ra bằng `cProfile` chứ không bằng phỏng đoán:
+Năm chỗ tốn, tất cả tìm ra bằng `cProfile` chứ không bằng phỏng đoán:
 
 1. **`Resolver` parse lại chuỗi CIDR cho từng rule.** `interface_subnet` bị gọi
    96.000 lần trong một lần dựng access-graph. Giờ `Resolver` cache subnet, IP
@@ -100,9 +102,19 @@ Hai chỗ tốn, tìm ra bằng `cProfile` chứ không bằng phỏng đoán:
    thay vì 16. `_Memo` cache theo `(firewall, source, protocol, in_interface)`;
    với cùng một zone nguồn thì khoá giống nhau ở mọi đích.
 
+3. **`IpSet.from_cidr` parse lại cùng một chuỗi.** 74.000 lần trong một lần dựng
+   risk report. `_parse_cidr` trong `ipset.py` cache bằng `lru_cache` và chỉ trả
+   về **số nguyên**, không bao giờ trả IpSet — cache một object có `list` bên
+   trong sẽ chia sẻ mảng mutable cho mọi caller.
+4. **`risk.exposures` dựng lại tập địa chỉ của từng region cho từng subject.**
+   `_allowed_from` giờ trả `(region, IpSet)` đã dựng sẵn một lần.
+5. **`RectSet.intersect` gọi hai method cho mỗi cặp hình chữ nhật.** 1,39 triệu
+   cặp; phép so sánh biên rẻ hơn chi phí gọi hàm, nên nội tuyến luôn. `Rect` thêm
+   `slots=True`.
+
 Bài học đáng nhớ: giả thuyết đầu tiên ("gọi lặp explore_from") **sai** — thêm
 cache mà không đo lại cho ra đúng 1.36s so với 1.34s. Chỗ thật sự tốn là parse
-CIDR trong resolver. Profile trước, sửa sau.
+CIDR. Profile trước, sửa sau.
 
 ## Nhiều firewall
 

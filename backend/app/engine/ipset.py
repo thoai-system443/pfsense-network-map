@@ -6,11 +6,25 @@ because comparing their integer representations is always a bug.
 
 import ipaddress
 from dataclasses import dataclass
+from functools import lru_cache
 
 from app.engine import intervals
 from app.engine.intervals import Interval
 
 _MAX = {4: 2**32 - 1, 6: 2**128 - 1}
+
+
+@lru_cache(maxsize=8192)
+def _parse_cidr(value: str) -> tuple[int, int, int]:
+    """(family, first address, last address) for a CIDR or bare address.
+
+    Cached because the engine re-parses the same handful of strings tens of
+    thousands of times in one request, and ipaddress parsing was the single
+    hottest line in the risk report. Only the integers are cached, never an
+    IpSet, so no caller can reach a shared mutable list.
+    """
+    net = ipaddress.ip_network(value.strip(), strict=False)
+    return net.version, int(net.network_address), int(net.broadcast_address)
 
 
 @dataclass(frozen=True)
@@ -28,8 +42,8 @@ class IpSet:
 
     @classmethod
     def from_cidr(cls, value: str) -> "IpSet":
-        net = ipaddress.ip_network(value.strip(), strict=False)
-        return cls(net.version, [(int(net.network_address), int(net.broadcast_address))])
+        family, first, last = _parse_cidr(value)
+        return cls(family, [(first, last)])
 
     def _check(self, other: "IpSet") -> None:
         if self.family != other.family:

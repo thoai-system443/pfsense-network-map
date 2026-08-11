@@ -16,7 +16,7 @@ _MAX_ADDR = {4: 2**32 - 1, 6: 2**128 - 1}
 _MAX_PORT = 65535
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Rect:
     a_lo: int
     a_hi: int
@@ -93,13 +93,26 @@ class RectSet:
         return RectSet(self.family, current)
 
     def intersect(self, other: "RectSet") -> "RectSet":
+        """Bounds computed inline rather than through Rect.intersection.
+
+        This is the innermost loop of the whole engine — over a million pairs on
+        a three thousand rule config — and two method calls per pair to answer
+        "do these overlap" cost more than the arithmetic does.
+        """
         self._check(other)
-        out = [
-            piece
-            for a in self.rects
-            for b in other.rects
-            if (piece := a.intersection(b)) is not None
-        ]
+        out: list[Rect] = []
+        for a in self.rects:
+            a_lo, a_hi, ap_lo, ap_hi = a.a_lo, a.a_hi, a.p_lo, a.p_hi
+            for b in other.rects:
+                lo = a_lo if a_lo > b.a_lo else b.a_lo
+                hi = a_hi if a_hi < b.a_hi else b.a_hi
+                if lo > hi:
+                    continue
+                p_lo = ap_lo if ap_lo > b.p_lo else b.p_lo
+                p_hi = ap_hi if ap_hi < b.p_hi else b.p_hi
+                if p_lo > p_hi:
+                    continue
+                out.append(Rect(lo, hi, p_lo, p_hi))
         return RectSet(self.family, out)
 
     def union(self, other: "RectSet") -> "RectSet":

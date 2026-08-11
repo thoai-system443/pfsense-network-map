@@ -135,7 +135,17 @@ def _subject_set(subject: Subject) -> IpSet:
 
 
 def _allowed_from(config: ParsedConfig, probe: str) -> list:
-    return [region for region in explore_from(config, probe, "any") if region.verdict == "pass"]
+    """Allowed regions, each paired with its addresses already turned into a set.
+
+    The set is built once here rather than per subject: exposures compares every
+    region against every zone and every subject, and rebuilding it each time was
+    the dominant cost of the whole risk report.
+    """
+    return [
+        (region, _region_addresses(region))
+        for region in explore_from(config, probe, "any")
+        if region.verdict == "pass"
+    ]
 
 
 def _region_addresses(region) -> IpSet:
@@ -170,8 +180,7 @@ def exposures(config: ParsedConfig) -> list[Exposure]:
 
         wide_open: list[str] = []
         internet_ports = PortSet.empty()
-        for region in outbound:
-            covered = _region_addresses(region)
+        for region, covered in outbound:
             ports = PortSet.parse(region.ports)
             every_port = ports.items == [(0, MAX_PORT)]
             for zone_id, label, addresses in zones:
@@ -183,15 +192,15 @@ def exposures(config: ParsedConfig) -> list[Exposure]:
                 internet_ports = internet_ports.union(ports)
 
         inbound_internet = PortSet.empty()
-        for region in allowed_from_internet:
-            if not _region_addresses(region).intersect(target).is_empty():
+        for region, covered in allowed_from_internet:
+            if not covered.intersect(target).is_empty():
                 inbound_internet = inbound_internet.union(PortSet.parse(region.ports))
 
         reaching_zones: set[str] = set()
         inbound_internal = PortSet.empty()
         for zone_id, _, _ in zones:
-            for region in allowed_by_zone.get(zone_id, []):
-                if _region_addresses(region).intersect(target).is_empty():
+            for region, covered in allowed_by_zone.get(zone_id, []):
+                if covered.intersect(target).is_empty():
                     continue
                 reaching_zones.add(zone_id)
                 inbound_internal = inbound_internal.union(PortSet.parse(region.ports))
