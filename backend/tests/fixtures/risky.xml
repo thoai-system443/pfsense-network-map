@@ -1,0 +1,80 @@
+<?xml version="1.0"?>
+<pfsense>
+  <version>22.5</version>
+  <system><hostname>fw-risky</hostname></system>
+  <interfaces>
+    <wan><if>em0</if><descr>WAN</descr><enable></enable>
+      <ipaddr>203.0.113.2</ipaddr><subnet>30</subnet></wan>
+    <lan><if>em1</if><descr>LAN</descr><enable></enable>
+      <ipaddr>192.168.1.1</ipaddr><subnet>24</subnet></lan>
+    <opt1><if>em2</if><descr>DMZ</descr><enable></enable>
+      <ipaddr>10.10.20.1</ipaddr><subnet>24</subnet></opt1>
+    <opt2><if>em3</if><descr>GUEST</descr><enable></enable>
+      <ipaddr>172.16.5.1</ipaddr><subnet>24</subnet></opt2>
+  </interfaces>
+  <aliases>
+    <alias><name>DB_SERVER</name><type>host</type>
+      <address>10.10.20.50</address><descr>Database</descr></alias>
+  </aliases>
+  <filter>
+    <!-- LAN reaches the whole DMZ on every port: lateral movement wide open. -->
+    <rule>
+      <type>pass</type><interface>lan</interface><ipprotocol>inet</ipprotocol>
+      <protocol>any</protocol>
+      <source><network>lan</network></source>
+      <destination><network>opt1</network></destination>
+      <descr>LAN to DMZ everything</descr>
+    </rule>
+    <!-- LAN reaches the internet on 443. -->
+    <rule>
+      <type>pass</type><interface>lan</interface><ipprotocol>inet</ipprotocol>
+      <protocol>tcp</protocol>
+      <source><network>lan</network></source>
+      <destination><any></any><port>443</port></destination>
+      <descr>LAN web browsing</descr>
+    </rule>
+    <!-- Granted to all of 10.0.0.0/8 but only 10.10.20.0/24 exists. -->
+    <rule>
+      <type>pass</type><interface>opt1</interface><ipprotocol>inet</ipprotocol>
+      <protocol>tcp</protocol>
+      <source><address>10.0.0.0/8</address></source>
+      <destination><address>DB_SERVER</address><port>5432</port></destination>
+      <descr>Postgres from the 10 space</descr>
+    </rule>
+    <!-- Published to the internet. -->
+    <rule>
+      <type>pass</type><interface>wan</interface><ipprotocol>inet</ipprotocol>
+      <protocol>tcp</protocol>
+      <source><any></any></source>
+      <destination><address>DB_SERVER</address><port>8443</port></destination>
+      <descr>DB admin console from anywhere</descr>
+    </rule>
+    <!-- A floating block-all with no quick flag: it does not actually stop anything. -->
+    <rule>
+      <floating>yes</floating><type>block</type><interface>opt1</interface>
+      <direction>any</direction><ipprotocol>inet</ipprotocol><protocol>any</protocol>
+      <source><any></any></source>
+      <destination><any></any></destination>
+      <descr>Block everything on DMZ</descr>
+    </rule>
+    <!--
+      A terminal block-all on GUEST. Floating rules are evaluated before the
+      interface's own, so the pass rule below it can never be reached.
+    -->
+    <rule>
+      <floating>yes</floating><quick>yes</quick><type>block</type>
+      <interface>opt2</interface><direction>any</direction>
+      <ipprotocol>inet</ipprotocol><protocol>any</protocol>
+      <source><any></any></source>
+      <destination><any></any></destination>
+      <descr>Lock down GUEST</descr>
+    </rule>
+    <rule>
+      <type>pass</type><interface>opt2</interface><ipprotocol>inet</ipprotocol>
+      <protocol>tcp</protocol>
+      <source><network>opt2</network></source>
+      <destination><any></any><port>80</port></destination>
+      <descr>GUEST web access that never runs</descr>
+    </rule>
+  </filter>
+</pfsense>

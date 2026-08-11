@@ -1,7 +1,7 @@
 from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.v1 import configs, inventory, maps, query
+from app.api.v1 import configs, inventory, maps, query, risk
 from app.settings import settings
 
 app = FastAPI(
@@ -30,5 +30,6 @@ v1.include_router(configs.router)
 v1.include_router(inventory.router)
 v1.include_router(maps.router)
 v1.include_router(query.router)
+v1.include_router(risk.router)
 
 app.include_router(v1)
