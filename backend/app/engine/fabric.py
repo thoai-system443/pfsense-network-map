@@ -14,7 +14,7 @@ import ipaddress
 from dataclasses import dataclass, field
 
 from app.engine import routing
-from app.engine.evaluate import RuleRef, check, explore_from
+from app.engine.evaluate import RuleRef, check, check_regions, explore_from
 from app.engine.ipset import IpSet
 from app.engine.portset import PortSet
 from app.parser.types import ParsedConfig
@@ -466,3 +466,254 @@ def access_graph(firewalls: list[Firewall], protocol: str = "any") -> dict:
             )
 
     return {"nodes": nodes, "edges": edges}
+
+
+@dataclass
+class PathRegionResult:
+    """One part of the source x destination space, and how far it got."""
+
+    sources: list[str]
+    destinations: list[str]
+    verdict: str
+    hops: list[Hop] = field(default_factory=list)
+    truncated: bool = False
+    stopped_reason: str | None = None
+
+
+MAX_REGIONS = 256
+
+
+def _union_cidrs(cidrs: list[str], family: int) -> IpSet:
+    out = IpSet.empty(family)
+    for cidr in cidrs:
+        out = out.union(IpSet.from_cidr(cidr))
+    return out
+
+
+def _split_by_entry_point(
+    firewalls: list[Firewall], sources: IpSet
+) -> list[tuple[Firewall | None, str, IpSet]]:
+    """Carve the source set by which firewall and interface it arrives on.
+
+    _entry_point answers for one address by longest prefix. Sorting every
+    interface subnet by prefix length and carving in that order gives the same
+    answer for every address in the set at once.
+    """
+    subnets: list[tuple[int, Firewall, str, ipaddress.IPv4Network]] = []
+    for firewall in firewalls:
+        for iface in firewall.config.interfaces:
+            network = _interface_network(iface)
+            if network is not None:
+                subnets.append((network.prefixlen, firewall, iface.name, network))
+    subnets.sort(key=lambda item: item[0], reverse=True)
+
+    remaining = sources
+    out: list[tuple[Firewall | None, str, IpSet]] = []
+    for _, firewall, iface_name, network in subnets:
+        if remaining.is_empty():
+            break
+        claimed = remaining.intersect(IpSet.from_cidr(str(network)))
+        if claimed.is_empty():
+            continue
+        out.append((firewall, iface_name, claimed))
+        remaining = remaining.subtract(claimed)
+
+    if not remaining.is_empty():
+        # Nothing owns these, so they come from outside: enter wherever the
+        # default route lives, matching _entry_point.
+        for firewall in firewalls:
+            default = next(
+                (g for g in firewall.config.gateways if g.default and not g.disabled), None
+            )
+            if default is not None and default.interface:
+                out.append((firewall, default.interface, remaining))
+                break
+        else:
+            out.append((None, "", remaining))
+    return out
+
+
+def path_check_regions(
+    firewalls: list[Firewall],
+    source_set: IpSet,
+    destination_set: IpSet,
+    port: int | None,
+    protocol: str = "any",
+) -> list[PathRegionResult]:
+    """path_check for sets: every part of the space gets its own chain.
+
+    Two hosts in one subnet can enter at different firewalls, be translated
+    differently and be refused at different hops. Collapsing the input to one
+    address hides all three, so the space is carried through the chain as a set
+    and split whenever the ruleset or the routing table treats parts of it
+    differently.
+    """
+    family = source_set.family
+    results: list[PathRegionResult] = []
+
+    queue: list[tuple[Firewall, str, IpSet, IpSet, int | None, list[Hop], frozenset]] = []
+    for firewall, in_interface, sources in _split_by_entry_point(firewalls, source_set):
+        if firewall is None:
+            results.append(
+                PathRegionResult(
+                    sources=sources.to_cidrs(),
+                    destinations=destination_set.to_cidrs(),
+                    verdict="unrouted",
+                    stopped_reason=(
+                        "no loaded firewall has an interface this source could arrive on"
+                    ),
+                )
+            )
+            continue
+        queue.append((firewall, in_interface, sources, destination_set, port, [], frozenset()))
+
+    while queue:
+        if len(results) >= MAX_REGIONS:
+            results.append(
+                PathRegionResult(
+                    sources=[],
+                    destinations=[],
+                    verdict="unrouted",
+                    truncated=True,
+                    stopped_reason=(
+                        f"stopped after {MAX_REGIONS} distinct regions; "
+                        "narrow the query to see the rest"
+                    ),
+                )
+            )
+            break
+
+        firewall, in_interface, sources, destinations, hop_port, hops, seen = queue.pop(0)
+
+        if (firewall.id, in_interface) in seen:
+            results.append(
+                PathRegionResult(
+                    sources=sources.to_cidrs(),
+                    destinations=destinations.to_cidrs(),
+                    verdict="pass",
+                    hops=hops,
+                    truncated=True,
+                    stopped_reason=f"routing loop back into {firewall.name} on {in_interface}",
+                )
+            )
+            continue
+        if len(hops) >= MAX_HOPS:
+            results.append(
+                PathRegionResult(
+                    sources=sources.to_cidrs(),
+                    destinations=destinations.to_cidrs(),
+                    verdict="pass",
+                    hops=hops,
+                    truncated=True,
+                    stopped_reason=f"gave up after {MAX_HOPS} hops",
+                )
+            )
+            continue
+        seen = seen | {(firewall.id, in_interface)}
+
+        decision = check_regions(
+            firewall.config, sources, destinations, hop_port, protocol, in_interface=in_interface
+        )
+        table = routing.build_table(firewall.config)
+
+        for region in decision.regions:
+            region_sources = _union_cidrs(region.sources, family)
+            forwarded = (
+                IpSet.from_cidr(region.translated_address)
+                if region.translated_address
+                else _union_cidrs(region.destinations, family)
+            )
+            next_port = region.translated_port if region.translated_address else hop_port
+
+            if region.verdict != "pass":
+                results.append(
+                    PathRegionResult(
+                        sources=region.sources,
+                        destinations=region.destinations,
+                        verdict=region.verdict,
+                        hops=[
+                            *hops,
+                            Hop(
+                                firewall_id=firewall.id,
+                                firewall_name=firewall.name,
+                                in_interface=in_interface,
+                                verdict=region.verdict,
+                                decided_by=region.decided_by,
+                                translated_address=region.translated_address,
+                                translated_port=region.translated_port,
+                            ),
+                        ],
+                    )
+                )
+                continue
+
+            for route, chunk in routing.split_by_route(table, forwarded):
+                hop = Hop(
+                    firewall_id=firewall.id,
+                    firewall_name=firewall.name,
+                    in_interface=in_interface,
+                    verdict="pass",
+                    decided_by=region.decided_by,
+                    out_interface=route.out_interface if route else None,
+                    next_hop=route.next_hop if route else None,
+                    translated_address=region.translated_address,
+                    translated_port=region.translated_port,
+                )
+                # What the caller asked about, not the post-NAT address: the
+                # translated target is already reported on the hop.
+                shown = region.destinations if region.translated_address else chunk.to_cidrs()
+
+                if route is None:
+                    results.append(
+                        PathRegionResult(
+                            sources=region.sources,
+                            destinations=shown,
+                            verdict="unrouted",
+                            hops=[*hops, hop],
+                            stopped_reason=f"{firewall.name} has no route to these addresses",
+                        )
+                    )
+                    continue
+
+                if route.next_hop is None:
+                    results.append(
+                        PathRegionResult(
+                            sources=region.sources,
+                            destinations=shown,
+                            verdict="pass",
+                            hops=[*hops, hop],
+                        )
+                    )
+                    continue
+
+                owner = _owner_of(firewalls, route.next_hop, exclude=firewall.id)
+                if owner is None:
+                    results.append(
+                        PathRegionResult(
+                            sources=region.sources,
+                            destinations=shown,
+                            verdict="pass",
+                            hops=[*hops, hop],
+                            truncated=True,
+                            stopped_reason=(
+                                f"next hop {route.next_hop} belongs to a device that is not "
+                                f"loaded here, so anything beyond {firewall.name} was not checked"
+                            ),
+                        )
+                    )
+                    continue
+
+                next_firewall, next_interface = owner
+                queue.append(
+                    (
+                        next_firewall,
+                        next_interface,
+                        region_sources,
+                        chunk,
+                        next_port,
+                        [*hops, hop],
+                        seen,
+                    )
+                )
+
+    return results

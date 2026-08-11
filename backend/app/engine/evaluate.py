@@ -6,7 +6,7 @@ interface rules with quick and floating rules without it, so the loop below
 reproduces the override behaviour rather than assuming first-match-wins.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from app.engine import nat, ruleset
 from app.engine.ipset import IpSet
@@ -215,6 +215,8 @@ class Region:
     ports: str
     verdict: str
     decided_by: RuleRef | None
+    protocol: str | None = None
+    """Which protocol this region is about, or None when it holds for all of them."""
 
 
 @dataclass(frozen=True)
@@ -223,6 +225,7 @@ class SourceRegion:
     addresses: list[str]
     verdict: str
     decided_by: RuleRef | None
+    protocol: str | None = None
 
 
 @dataclass(frozen=True)
@@ -231,6 +234,9 @@ class PathRegion:
     destinations: list[str]
     verdict: str
     decided_by: RuleRef | None
+    translated_address: str | None = None
+    translated_port: int | None = None
+    translated_via: str | None = None
 
 
 @dataclass
@@ -273,25 +279,67 @@ def check_regions(
     probe = _first_address(source_set)
     in_iface = in_interface or (ruleset.inbound_interface(config, probe) if probe else "wan")
 
-    # NAT is applied when the destination is one address, which is what the
-    # Path check form produces. A destination set spanning several port-forward
-    # targets is not translated; that case is recorded as a known limit.
-    translated_address = None
-    translated_port = None
-    effective_destination = destination_set
-    single = _first_address(destination_set)
-    is_one_address = len(destination_set.items) == 1 and (
-        destination_set.items[0][0] == destination_set.items[0][1]
-    )
-    if single and is_one_address:
-        translation = nat.translate_destination(config, resolver, in_iface, single, port, protocol)
-        if translation:
-            translated_address = translation.address
-            translated_port = translation.port
-            effective_destination = IpSet.from_cidr(translation.address)
-            port = translation.port
+    # The destination set is carved by translation first, because a set can
+    # straddle several port forwards and each part then has its own post-NAT
+    # destination and port. Filtering runs per part, on the translated address,
+    # which is the order pfSense applies them in.
+    groups = nat.split_destinations(config, resolver, in_iface, destination_set, port, protocol)
 
-    unsettled = RectSet.cross(source_set, effective_destination)
+    regions: list[PathRegion] = []
+    unresolved = False
+    first: nat.Translation | None = None
+
+    for original, translation in groups:
+        if translation is not None:
+            effective = IpSet.from_cidr(translation.address)
+            effective_port = translation.port
+            first = first or translation
+        else:
+            effective = original
+            effective_port = port
+
+        walked, walk_unresolved = _walk_regions(
+            config, resolver, in_iface, source_set, effective, effective_port, protocol, family
+        )
+        unresolved = unresolved or walk_unresolved
+
+        for region in walked:
+            regions.append(
+                PathRegion(
+                    sources=region.sources,
+                    # A port forward rewrites to one address, so every region in
+                    # a translated group covers the whole part. Reporting the
+                    # address that was searched for keeps the answer legible.
+                    destinations=original.to_cidrs() if translation else region.destinations,
+                    verdict=region.verdict,
+                    decided_by=region.decided_by,
+                    translated_address=translation.address if translation else None,
+                    translated_port=translation.port if translation else None,
+                    translated_via=translation.via if translation else None,
+                )
+            )
+
+    return RegionResult(
+        regions=[r for r in regions if r.sources and r.destinations],
+        in_interface=in_iface,
+        unresolved=unresolved,
+        translated_address=first.address if first else None,
+        translated_port=first.port if first else None,
+    )
+
+
+def _walk_regions(
+    config: ParsedConfig,
+    resolver: Resolver,
+    in_iface: str,
+    source_set: IpSet,
+    destination_set: IpSet,
+    port: int | None,
+    protocol: str,
+    family: int,
+) -> tuple[list[PathRegion], bool]:
+    """The quick / last-match walk of check(), run over a rectangle of traffic."""
+    unsettled = RectSet.cross(source_set, destination_set)
     settled: list[PathRegion] = []
     provisional: list[tuple[RectSet, str, RuleRef]] = []
     unresolved = False
@@ -316,7 +364,7 @@ def check_regions(
 
         slice_ = RectSet.cross(
             rule_sources.intersect(source_set),
-            rule_destinations.intersect(effective_destination),
+            rule_destinations.intersect(destination_set),
         ).intersect(unsettled)
         if slice_.is_empty():
             continue
@@ -336,13 +384,7 @@ def check_regions(
         unsettled = unsettled.subtract(remaining)
 
     settled.extend(_to_path_regions(unsettled, "block", None))
-    return RegionResult(
-        regions=[r for r in settled if r.sources and r.destinations],
-        in_interface=in_iface,
-        unresolved=unresolved,
-        translated_address=translated_address,
-        translated_port=translated_port,
-    )
+    return settled, unresolved
 
 
 def _to_path_regions(area: RectSet, verdict: str, ref: RuleRef | None) -> list[PathRegion]:
@@ -458,10 +500,49 @@ def explore_from(
 ) -> list[Region]:
     """Every destination reachable from source, as a complete partition of the space.
 
-    Mirrors the quick / last-match rule of check() but over the whole space at
-    once: a quick rule settles its slice immediately, a non-quick rule only
-    stakes a provisional claim that a later quick rule can take back.
+    "any" is walked once per protocol, for the same reason check() does: a rule
+    naming tcp says nothing about udp, and one shared walk reports the union as
+    though every protocol were permitted. Regions that come out identical for
+    all three are merged back into one untagged region, so the common case where
+    no rule names a protocol looks exactly as it did before.
     """
+    if protocol != "any":
+        return _explore_from_one(config, source, protocol, in_interface)
+
+    per_protocol = {
+        candidate: _explore_from_one(config, source, candidate, in_interface)
+        for candidate in ANY_PROTOCOLS
+    }
+    return _merge_by_protocol(per_protocol, lambda region: (tuple(region.addresses), region.ports))
+
+
+def _merge_by_protocol(per_protocol: dict, key):
+    """Collapse regions identical across every protocol; tag the rest."""
+    counts: dict = {}
+    for candidate, regions in per_protocol.items():
+        for region in regions:
+            counts.setdefault((key(region), region.verdict, region.decided_by), set()).add(
+                candidate
+            )
+
+    out = []
+    for candidate, regions in per_protocol.items():
+        for region in regions:
+            shared = counts[(key(region), region.verdict, region.decided_by)]
+            if len(shared) == len(ANY_PROTOCOLS):
+                if candidate == ANY_PROTOCOLS[0]:
+                    out.append(region)
+            else:
+                out.append(replace(region, protocol=candidate))
+    return out
+
+
+def _explore_from_one(
+    config: ParsedConfig,
+    source: str,
+    protocol: str,
+    in_interface: str | None = None,
+) -> list[Region]:
     resolver = Resolver(config)
     family = 6 if ":" in source else 4
     in_iface = in_interface or ruleset.inbound_interface(config, source)
@@ -547,7 +628,29 @@ def explore_to(
     port: int | None,
     protocol: str = "any",
 ) -> list[SourceRegion]:
-    """Every source that can reach destination, grouped by inbound interface."""
+    """Every source that can reach destination, grouped by inbound interface.
+
+    Walked once per protocol when asked for "any", for the reason explore_from
+    gives.
+    """
+    if protocol != "any":
+        return _explore_to_one(config, destination, port, protocol)
+
+    per_protocol = {
+        candidate: _explore_to_one(config, destination, port, candidate)
+        for candidate in ANY_PROTOCOLS
+    }
+    return _merge_by_protocol(
+        per_protocol, lambda region: (region.in_interface, tuple(region.addresses))
+    )
+
+
+def _explore_to_one(
+    config: ParsedConfig,
+    destination: str,
+    port: int | None,
+    protocol: str,
+) -> list[SourceRegion]:
     resolver = Resolver(config)
     family = 6 if ":" in destination else 4
     out: list[SourceRegion] = []

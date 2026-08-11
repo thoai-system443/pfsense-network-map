@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from app.engine import fabric
-from app.engine.evaluate import check, explore_from, explore_to
+from app.engine.evaluate import ANY_PROTOCOLS, check, explore_from, explore_to
 from app.engine.ipset import IpSet
 from app.parser.loader import parse_config
 
@@ -237,3 +237,130 @@ def test_check_regions_agrees_with_check_on_every_fixture(name):
             f"{name}: {source}->{destination}:{port} — check says {expected.verdict}, "
             f"check_regions says {verdicts}"
         )
+
+
+def test_a_destination_set_spanning_two_port_forwards_is_translated_per_part():
+    """203.0.113.2 and .3 forward to different hosts. One query must see both."""
+    from app.engine.evaluate import check_regions
+
+    config = load("nat_portforward.xml")
+    result = check_regions(
+        config,
+        IpSet.from_cidr("8.8.8.8/32"),
+        IpSet.from_cidr("203.0.113.0/29"),
+        443,
+        "tcp",
+    )
+    translated = {r.translated_address for r in result.regions if r.translated_address}
+    assert translated == {"192.168.1.10", "192.168.1.50"}
+
+    # And each part keeps the verdict check() gives for it on its own.
+    for address in ("203.0.113.2", "203.0.113.3"):
+        expected = check(config, "8.8.8.8", address, 443, "tcp").verdict
+        covering = [r for r in result.regions if touches(r.destinations, f"{address}/32")]
+        assert {r.verdict for r in covering} == {expected}, address
+
+
+# --------------------------------------------------------------------------
+# The set walk across firewalls must reduce to the point walk.
+# --------------------------------------------------------------------------
+
+CHAINS = {
+    "nat-chain": ["nat_chain_edge.xml", "nat_chain_core.xml"],
+    "routed-core": ["routed.xml", "core.xml"],
+}
+
+
+@pytest.mark.parametrize("chain", sorted(CHAINS))
+def test_path_check_regions_agrees_with_path_check_for_one_host(chain):
+    firewalls = [
+        fabric.Firewall(id=f"fw-{i}", name=f"fw-{i}", config=load(name))
+        for i, name in enumerate(CHAINS[chain])
+    ]
+    for source, destination, port in SAMPLE_TARGETS:
+        expected = fabric.path_check(firewalls, source, destination, port, "tcp")
+        regions = fabric.path_check_regions(
+            firewalls,
+            IpSet.from_cidr(f"{source}/32"),
+            IpSet.from_cidr(f"{destination}/32"),
+            port,
+            "tcp",
+        )
+        assert {r.verdict for r in regions} == {expected.verdict}, (
+            f"{chain}: {source}->{destination}:{port} — path_check says {expected.verdict}, "
+            f"regions say {[r.verdict for r in regions]}"
+        )
+        for region in regions:
+            assert [h.firewall_name for h in region.hops] == [
+                h.firewall_name for h in expected.hops
+            ]
+
+
+def test_a_source_subnet_split_by_a_quarantine_rule_across_firewalls():
+    """One blocked host inside a permitted /24 must survive the multi-hop walk."""
+    firewalls = [
+        fabric.Firewall(id="fw-0", name="fw-edge", config=load("nat_chain_edge.xml")),
+        fabric.Firewall(id="fw-1", name="fw-core", config=load("nat_chain_core.xml")),
+    ]
+    regions = fabric.path_check_regions(
+        firewalls,
+        IpSet.from_cidr("8.8.8.0/24"),
+        IpSet.from_cidr("203.0.113.2/32"),
+        443,
+        "tcp",
+    )
+    assert regions
+    # The NAT target is what the second hop filters on, so the chain has to
+    # reach fw-core rather than stopping at the public address.
+    assert any(len(r.hops) == 2 for r in regions)
+    assert all(r.hops[0].firewall_name == "fw-edge" for r in regions if r.hops)
+
+
+def test_explore_from_under_any_does_not_claim_every_protocol():
+    """The From tab had the same bug as check(): a tcp rule read as all protocols."""
+    config = build(TCP_ONLY)
+    passing = [
+        r
+        for r in explore_from(config, "192.168.1.9", "any")
+        if r.verdict == "pass" and touches(r.addresses, "8.8.8.8/32") and "443" in r.ports
+    ]
+    assert passing, "the tcp region must still be reported"
+    assert {r.protocol for r in passing} == {"tcp"}, (
+        "a region only tcp can use must say so, not appear as a protocol-agnostic pass"
+    )
+
+
+def test_explore_to_under_any_tags_the_protocol_too():
+    config = build(PUBLISHED)
+    passing = [
+        r
+        for r in explore_to(config, "10.10.20.50", 8443, "any")
+        if r.verdict == "pass" and touches(r.addresses, "8.8.8.8/32")
+    ]
+    assert passing
+    assert {r.protocol for r in passing} == {"tcp"}
+
+
+@pytest.mark.parametrize("name", ALL_FIXTURES)
+def test_explore_from_agrees_with_check_under_any(name):
+    """A region tagged for one protocol must match check() for that protocol."""
+    from app.engine.portset import PortSet
+
+    config = load(name)
+    if not config.interfaces:
+        pytest.skip("no interfaces to evaluate")
+
+    for source, destination, port in SAMPLE_TARGETS:
+        for region in explore_from(config, source, "any"):
+            if PortSet.parse(region.ports).intersect(PortSet.parse(str(port))).is_empty():
+                continue
+            if not touches(region.addresses, f"{destination}/32"):
+                continue
+            # An untagged region claims every protocol, so check each of them.
+            protocols = [region.protocol] if region.protocol else list(ANY_PROTOCOLS)
+            for candidate in protocols:
+                expected = check(config, source, destination, port, candidate).verdict
+                assert region.verdict == expected, (
+                    f"{name}: {source}->{destination}:{port}/{candidate} — "
+                    f"check says {expected}, explore_from says {region.verdict}"
+                )

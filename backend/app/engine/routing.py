@@ -9,6 +9,7 @@ the default route.
 import ipaddress
 from dataclasses import dataclass
 
+from app.engine.ipset import IpSet
 from app.parser.types import ParsedConfig
 
 FAMILY = 4
@@ -130,3 +131,35 @@ def lookup(table: list[RouteEntry], address: str) -> RouteEntry | None:
         if parsed in network:
             return entry
     return None
+
+
+def split_by_route(
+    table: list[RouteEntry], addresses: "IpSet"
+) -> list[tuple[RouteEntry | None, "IpSet"]]:
+    """Partition an address set by the route each part would follow.
+
+    The table is already sorted longest prefix first, so carving in order gives
+    the same answer lookup() gives for every address, without visiting them one
+    at a time. Whatever no entry claims is unroutable and comes back with None.
+    """
+    remaining = addresses
+    out: list[tuple[RouteEntry | None, IpSet]] = []
+
+    for entry in table:
+        if remaining.is_empty():
+            break
+        try:
+            network = ipaddress.ip_network(entry.network, strict=False)
+        except ValueError:
+            continue
+        if network.version != FAMILY:
+            continue
+        claimed = remaining.intersect(IpSet.from_cidr(str(network)))
+        if claimed.is_empty():
+            continue
+        out.append((entry, claimed))
+        remaining = remaining.subtract(claimed)
+
+    if not remaining.is_empty():
+        out.append((None, remaining))
+    return out
