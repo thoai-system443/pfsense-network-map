@@ -2,6 +2,7 @@
 
 | Version | Date | Changes |
 |---|---|---|
+| 1.2.0 | 2026-08-10 | Thêm trang Risk: 4 tiêu chí phơi nhiễm, tra theo port, địa chỉ trống, deny-all |
 | 1.1.0 | 2026-08-10 | Access map: kéo node tự do, click node để lọc luồng liên quan |
 | 1.0.0 | 2026-08-10 | Kiến trúc ban đầu: SPA tĩnh, API_URL đọc lúc runtime |
 
@@ -76,6 +77,15 @@ của mảng đổi mỗi lần cha re-render.
 
 Node đang focus luôn hiển thị kể cả khi không có luồng nào, nếu không thì click
 vào một zone không có luồng sẽ làm chính nó biến mất ngay dưới con trỏ.
+
+## Trang Risk
+
+Bốn bảng trên cùng một trang, nên mỗi bảng phải có `aria-label` — không có tên
+thì screen reader chỉ đọc được "table". Đó cũng là cách test trỏ đúng bảng khi
+cùng một chuỗi (ví dụ một CIDR) xuất hiện ở nhiều bảng.
+
+Cột phơi nhiễm hiển thị kèm **danh sách port**, không chỉ dấu tick. Biết "lộ ra
+internet" mà không biết cổng nào thì vẫn phải mở lại trang Search để tra.
 
 ## Gotchas
 

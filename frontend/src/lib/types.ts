@@ -154,3 +154,51 @@ export interface SourceRegion {
   verdict: Verdict;
   decided_by: RuleRef | null;
 }
+
+export interface RiskSubject {
+  id: string;
+  label: string;
+  kind: "interface" | "tunnel" | "alias";
+  cidrs: string[];
+}
+
+export interface Exposure {
+  subject: RiskSubject;
+  reaches_other_subnets_any_port: string[];
+  reaches_internet: boolean;
+  internet_ports: string;
+  reachable_from_all_internal: boolean;
+  inbound_internal_ports: string;
+  reachable_from_internet: boolean;
+  inbound_internet_ports: string;
+}
+
+export interface PortAccess {
+  source_id: string;
+  source_label: string;
+  destination_cidrs: string[];
+  ports: string;
+  rule: RuleRef | null;
+}
+
+export interface Grant {
+  rule: RuleRef;
+  interface: string;
+  side: "source" | "destination";
+  granted_cidrs: string[];
+  unoccupied_cidrs: string[];
+  unoccupied_addresses: number;
+}
+
+export interface DenyAllFinding {
+  kind: "block-all-not-quick" | "unreachable-rule";
+  interface: string;
+  rule: RuleRef;
+  detail: string;
+}
+
+export interface RiskReport {
+  exposures: Exposure[];
+  unoccupied_grants: Grant[];
+  deny_all: DenyAllFinding[];
+}

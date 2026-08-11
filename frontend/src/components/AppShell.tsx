@@ -5,6 +5,7 @@ const TABS = [
   { to: "access", label: "Access map" },
   { to: "search", label: "Search" },
   { to: "inventory", label: "Inventory" },
+  { to: "risk", label: "Risk" },
 ];
 
 export function AppShell() {

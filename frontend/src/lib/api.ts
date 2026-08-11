@@ -8,7 +8,9 @@ import type {
   GraphNode,
   Interface,
   NatConfig,
+  PortAccess,
   Region,
+  RiskReport,
   SourceRegion,
   TopologyEdge,
 } from "./types";
@@ -65,3 +67,8 @@ export const queryTo = (
   id: string,
   body: { destination: string; port: number | null; protocol: string },
 ) => postJson<SourceRegion[]>(`/configs/${id}/query/to`, body);
+
+export const getRiskReport = (id: string) => request<RiskReport>(`/configs/${id}/risk`);
+
+export const getPortAccess = (id: string, port: number, protocol: string) =>
+  request<PortAccess[]>(`/configs/${id}/risk/port?port=${port}&protocol=${protocol}`);
