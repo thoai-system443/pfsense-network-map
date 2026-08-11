@@ -2,6 +2,7 @@
 
 | Version | Date | Changes |
 |---|---|---|
+| 1.1.0 | 2026-08-10 | Nhận diện `srcmac`/`dstmac`/`bridgeto` từ config thật đầu tiên, kèm cảnh báo "không mô phỏng" |
 | 1.0.0 | 2026-08-10 | Kiến trúc ban đầu: parser, engine, API stateless |
 
 ## Stack
@@ -108,10 +109,29 @@ rằng hai đường tính này luôn cho cùng kết quả.
 - Tập địa chỉ được chuẩn hoá: `to_cidrs()` trả vùng phủ CIDR tối thiểu, nên hai
   host liền kề `.10` và `.11` hiện ra thành `.10/31` chứ không phải hai `/32`.
 
+## Field thu hẹp rule mà engine không mô phỏng
+
+Một rule có thể khớp **ít** packet hơn phần địa chỉ và port gợi ý. Engine bỏ qua
+những field đó, nên mọi verdict rút ra từ rule như vậy chỉ có thể **rộng hơn**
+thực tế, không bao giờ chặt hơn. Danh sách nằm ở `NARROWING_FIELDS` trong
+`app/parser/rules.py`; mỗi lần gặp, parser sinh một `ParseWarning` nói rõ điều đó.
+
+| Field | Thu hẹp theo |
+|---|---|
+| `srcmac` | Địa chỉ MAC nguồn |
+| `dstmac` | Địa chỉ MAC đích |
+| `bridgeto` | Interface thành viên bridge |
+
+Gặp field thu hẹp mới trong config thật thì thêm vào **cả hai**:
+`KNOWN_RULE_CHILDREN` (để hết báo "unrecognised") và `NARROWING_FIELDS` (để vẫn
+cảnh báo). Chỉ thêm vào danh sách thứ nhất là biến một giới hạn đã biết thành một
+lỗi im lặng.
+
 ## Chưa kiểm chứng
 
-Parser viết theo schema pfSense 2.7 và **chưa từng chạy với config thật**. Hai
-chỗ rủi ro nhất khi nạp file thật lần đầu:
+Parser viết theo schema pfSense 2.7. Lần đối chiếu đầu tiên với config thật đã
+phát hiện ba field thiếu (`srcmac`, `dstmac`, `bridgeto`) — cơ chế `ParseWarning`
+hoạt động đúng như thiết kế. Vẫn còn hai chỗ rủi ro:
 
 1. **Tên field** trong các hằng `KNOWN_*_CHILDREN` của từng module parser. Danh
    sách `warnings` trong response upload sẽ chỉ ra ngay chỗ thiếu — đó là lý do

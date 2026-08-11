@@ -43,6 +43,18 @@ KNOWN_RULE_CHILDREN = {
     "defaultqueue",
     "ackqueue",
     "associated-rule-id",
+    # Seen in a real backup. Each narrows the rule in a way the engine does not
+    # model, so parse_rules warns whenever one is present.
+    "srcmac",
+    "dstmac",
+    "bridgeto",
+}
+
+# Field name -> what it narrows, for the warning text.
+NARROWING_FIELDS = {
+    "srcmac": "the source MAC address",
+    "dstmac": "the destination MAC address",
+    "bridgeto": "a bridge member interface",
 }
 KNOWN_ADDR_CHILDREN = {"any", "network", "address", "not", "port"}
 VALID_ACTIONS = {"pass", "block", "reject"}
@@ -82,6 +94,19 @@ def parse_rules(root, warnings: WarningCollector) -> list[FilterRule]:
         if ipprotocol not in VALID_IPPROTOCOLS:
             warnings.add(path, f"unknown ipprotocol {ipprotocol!r}, treated as inet")
             ipprotocol = "inet"
+
+        # These make the rule match fewer packets than address and port alone
+        # suggest. The engine ignores them, so every verdict derived from such a
+        # rule can only be too permissive, never too strict. Say so.
+        for field, what in NARROWING_FIELDS.items():
+            value = text_of(node, field)
+            if value:
+                warnings.add(
+                    path,
+                    f"rule also matches on {what} via <{field}>{value}</{field}>, which this "
+                    f"tool does not model; results involving this rule may show more access "
+                    f"than the firewall actually allows",
+                )
 
         raw_interface = text_of(node, "interface", "") or ""
         out.append(

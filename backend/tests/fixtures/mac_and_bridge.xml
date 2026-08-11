@@ -1,0 +1,41 @@
+<?xml version="1.0"?>
+<pfsense>
+  <version>22.5</version>
+  <interfaces>
+    <lan><if>em1</if><descr>LAN</descr><enable></enable>
+      <ipaddr>192.168.1.1</ipaddr><subnet>24</subnet></lan>
+  </interfaces>
+  <filter>
+    <rule>
+      <type>pass</type><interface>lan</interface><ipprotocol>inet</ipprotocol>
+      <protocol>tcp</protocol>
+      <source><network>lan</network></source>
+      <destination><any></any><port>443</port></destination>
+      <srcmac>00:11:22:33:44:55</srcmac>
+      <descr>Allow one laptop to HTTPS</descr>
+    </rule>
+    <rule>
+      <type>pass</type><interface>lan</interface><ipprotocol>inet</ipprotocol>
+      <protocol>tcp</protocol>
+      <source><network>lan</network></source>
+      <destination><any></any><port>80</port></destination>
+      <dstmac>66:77:88:99:aa:bb</dstmac>
+      <descr>Allow HTTP to one gateway MAC</descr>
+    </rule>
+    <rule>
+      <type>pass</type><interface>lan</interface><ipprotocol>inet</ipprotocol>
+      <protocol>any</protocol>
+      <source><network>lan</network></source>
+      <destination><any></any></destination>
+      <bridgeto>opt5</bridgeto>
+      <descr>Bridged rule</descr>
+    </rule>
+    <rule>
+      <type>pass</type><interface>lan</interface><ipprotocol>inet</ipprotocol>
+      <protocol>tcp</protocol>
+      <source><network>lan</network></source>
+      <destination><any></any><port>22</port></destination>
+      <descr>Plain rule with no MAC</descr>
+    </rule>
+  </filter>
+</pfsense>

@@ -1,0 +1,7 @@
+# Duplicate copies produced by file-sync tools (iCloud, Dropbox, OneDrive):
+# "loader.py" becomes "loader 2.py". They are byte-identical to the original, so
+# committing them is pure noise, and pytest happily collects the copies and
+# reports twice the real number of tests.
+* [0-9].*
+# Same thing for files with no extension: "Dockerfile 2", ".gitignore 2".
+* [0-9]
