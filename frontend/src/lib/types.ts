@@ -1,5 +1,11 @@
 export type Verdict = "pass" | "block" | "reject";
 
+/**
+ * A rule can also be "match": a floating shaper rule that assigns a queue and
+ * decides nothing. It never appears as a verdict, only as a rule's own action.
+ */
+export type RuleAction = Verdict | "match";
+
 export interface ParseWarning {
   path: string;
   message: string;
@@ -51,7 +57,7 @@ export interface FilterRule {
   floating: boolean;
   quick: boolean;
   direction: string;
-  action: Verdict;
+  action: RuleAction;
   disabled: boolean;
   ipprotocol: string;
   protocol: string;
@@ -97,7 +103,7 @@ export interface NatConfig {
 export interface RuleRef {
   seq: number;
   interface: string;
-  action: Verdict;
+  action: RuleAction;
   descr: string;
   tracker: string | null;
   floating: boolean;

@@ -60,6 +60,17 @@ class CheckResult:
     trace: list[TraceEntry] = field(default_factory=list)
 
 
+def decides(rule: FilterRule) -> bool:
+    """Whether a matching rule settles the verdict.
+
+    A `match` rule assigns a queue or limiter and evaluation carries on. Letting
+    it decide would turn a floating shaper rule covering any->any into a block
+    on everything, and the tool would report traffic as denied while the
+    firewall was letting it through.
+    """
+    return rule.action != "match"
+
+
 def rule_matches(
     resolver: Resolver,
     rule: FilterRule,
@@ -122,7 +133,7 @@ def check(
         )
         result.unresolved = result.unresolved or unresolved
         result.trace.append(TraceEntry(rule=RuleRef.of(rule), matched=matched, reason=reason))
-        if not matched:
+        if not matched or not decides(rule):
             continue
         result.verdict = rule.action
         result.decided_by = RuleRef.of(rule)
@@ -178,6 +189,8 @@ def explore_from(config: ParsedConfig, source: str, protocol: str = "any") -> li
     provisional: list[tuple[RectSet, str, RuleRef]] = []
 
     for rule in ruleset.build(config, in_iface):
+        if not decides(rule):
+            continue
         if not family_matches(rule.ipprotocol, family):
             continue
         if not protocol_matches(rule.protocol, protocol):
@@ -233,6 +246,8 @@ def explore_to(
         settled: list[SourceRegion] = []
 
         for rule in ruleset.build(config, iface.name):
+            if not decides(rule):
+                continue
             if not family_matches(rule.ipprotocol, family):
                 continue
             if not protocol_matches(rule.protocol, protocol):

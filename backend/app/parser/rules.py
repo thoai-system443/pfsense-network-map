@@ -57,7 +57,7 @@ NARROWING_FIELDS = {
     "bridgeto": "a bridge member interface",
 }
 KNOWN_ADDR_CHILDREN = {"any", "network", "address", "not", "port"}
-VALID_ACTIONS = {"pass", "block", "reject"}
+VALID_ACTIONS = {"pass", "block", "reject", "match"}
 VALID_IPPROTOCOLS = {"inet", "inet6", "inet46"}
 
 

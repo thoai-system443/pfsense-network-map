@@ -60,6 +60,8 @@ KNOWN_OUTBOUND_RULE_CHILDREN = {
     "created",
     "updated",
     "protocol",
+    "ipprotocol",
+    "source_hash_key",
 }
 
 

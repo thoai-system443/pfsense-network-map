@@ -1,0 +1,47 @@
+<?xml version="1.0"?>
+<pfsense>
+  <version>22.5</version>
+  <interfaces>
+    <wan><if>em0</if><descr>WAN</descr><enable></enable>
+      <ipaddr>203.0.113.2</ipaddr><subnet>30</subnet></wan>
+    <lan><if>em1</if><descr>LAN</descr><enable></enable>
+      <ipaddr>192.168.1.1</ipaddr><subnet>24</subnet></lan>
+  </interfaces>
+  <filter>
+    <!--
+      A shaper rule. It matches everything and assigns a queue, but it neither
+      passes nor blocks: evaluation carries on to the rules below it. Treating
+      this as a block would make the whole interface look sealed shut.
+    -->
+    <rule>
+      <floating>yes</floating><quick>yes</quick><type>match</type>
+      <interface>lan</interface><direction>any</direction>
+      <ipprotocol>inet</ipprotocol><protocol>any</protocol>
+      <source><any></any></source>
+      <destination><any></any></destination>
+      <defaultqueue>qInternet</defaultqueue>
+      <descr>Shape all LAN traffic</descr>
+    </rule>
+    <rule>
+      <type>pass</type><interface>lan</interface><ipprotocol>inet</ipprotocol>
+      <protocol>tcp</protocol>
+      <source><network>lan</network></source>
+      <destination><any></any><port>443</port></destination>
+      <descr>Allow LAN to any HTTPS</descr>
+    </rule>
+  </filter>
+  <nat>
+    <outbound>
+      <mode>hybrid</mode>
+      <rule>
+        <interface>wan</interface>
+        <ipprotocol>inet</ipprotocol>
+        <source><network>192.168.1.0/24</network></source>
+        <destination><any></any></destination>
+        <target></target>
+        <source_hash_key>0x0123456789abcdef0123456789abcdef</source_hash_key>
+        <descr>Masquerade LAN</descr>
+      </rule>
+    </outbound>
+  </nat>
+</pfsense>

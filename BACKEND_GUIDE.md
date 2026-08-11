@@ -2,6 +2,7 @@
 
 | Version | Date | Changes |
 |---|---|---|
+| 1.4.0 | 2026-08-10 | Action `match` không quyết định verdict; nhận `source_hash_key`/`ipprotocol` của outbound NAT |
 | 1.3.0 | 2026-08-10 | Thêm `engine/risk.py`: 4 tiêu chí phơi nhiễm, tra theo port, khoảng địa chỉ trống, kiểm tra deny-all |
 | 1.2.0 | 2026-08-10 | `CORS_ORIGINS` nhận chuỗi thô và danh sách phẩy, có kiểm tra định dạng |
 | 1.1.0 | 2026-08-10 | Nhận diện `srcmac`/`dstmac`/`bridgeto` từ config thật đầu tiên, kèm cảnh báo "không mô phỏng" |
@@ -159,6 +160,22 @@ Hai điểm cần biết khi đọc kết quả:
 - **`unoccupied_grants` bỏ qua phần ngoài không gian nội bộ khi rule ghi `any`.**
   `any` nghĩa là cả internet một cách có chủ đích, không phải lỗi cấu hình; chỉ
   phần nằm trong dải địa chỉ của chính hệ thống mới đáng báo.
+
+## Action `match`
+
+pfSense có bốn action, không phải ba: `pass`, `block`, `reject` và **`match`**.
+`match` dùng cho floating rule gắn queue/limiter — nó khớp traffic nhưng **không
+quyết định gì**, đánh giá đi tiếp xuống rule dưới.
+
+`evaluate.decides()` là chỗ duy nhất chốt điều này, và cả `check`,
+`explore_from`, `explore_to` đều đi qua nó. Rule `match` vẫn nằm trong trace và
+trong danh sách rule của Inventory, vì nó **có** được đánh giá — chỉ là không
+định đoạt kết quả.
+
+Đây là lỗi thật đã xảy ra: bản đầu quy mọi action lạ về `block`, nên một floating
+`match` any→any (rất phổ biến khi bật traffic shaper) bị mô phỏng thành chặn sạch
+toàn bộ interface. Công cụ báo "block" trong khi firewall vẫn cho traffic đi —
+kiểu sai nguy hiểm nhất, vì nó khiến người đọc yên tâm nhầm.
 
 ## Field thu hẹp rule mà engine không mô phỏng
 

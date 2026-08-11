@@ -9,7 +9,9 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 Severity = Literal["info", "warning", "error"]
-Action = Literal["pass", "block", "reject"]
+# "match" is a real pfSense action used by floating shaper rules: it assigns a
+# queue or limiter and lets evaluation continue, deciding nothing.
+Action = Literal["pass", "block", "reject", "match"]
 Direction = Literal["in", "out", "any"]
 IpProtocol = Literal["inet", "inet6", "inet46"]
 AliasType = Literal["host", "network", "port", "url", "urltable"]
