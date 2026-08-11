@@ -1,4 +1,9 @@
+# Every .env variant: .env.bak, .env.keep, .env.local. A plain ".env" line does
+# not cover copies, and a copy of .env holds the same DOCS_PASSWORD the original
+# does.
 .env
+.env.*
+!.env.example
 .venv/
 __pycache__/
 *.egg-info/

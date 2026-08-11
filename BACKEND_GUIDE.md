@@ -2,6 +2,7 @@
 
 | Version | Date | Changes |
 |---|---|---|
+| 1.2.0 | 2026-08-10 | `CORS_ORIGINS` nhận chuỗi thô và danh sách phẩy, có kiểm tra định dạng |
 | 1.1.0 | 2026-08-10 | Nhận diện `srcmac`/`dstmac`/`bridgeto` từ config thật đầu tiên, kèm cảnh báo "không mô phỏng" |
 | 1.0.0 | 2026-08-10 | Kiến trúc ban đầu: parser, engine, API stateless |
 
@@ -48,7 +49,30 @@ nginx là container duy nhất publish port. uvicorn không bind ra host.
 | `API_PORT` | không | Port host cho nginx, mặc định **8010** |
 | `DOCS_USER` | **có** | Tài khoản Basic auth cho `/api/v1/docs` |
 | `DOCS_PASSWORD` | **có** | Mật khẩu Basic auth. Entrypoint fail fast nếu thiếu |
-| `CORS_ORIGINS` | không | Danh sách JSON origin được phép, mặc định `["http://localhost:8011"]` |
+| `CORS_ORIGINS` | không | Origin được phép, mặc định `http://localhost:8011`. Xem bên dưới |
+
+### CORS_ORIGINS
+
+Nhận ba cách viết, kết quả như nhau:
+
+```
+CORS_ORIGINS=http://localhost:8011
+CORS_ORIGINS=http://localhost:8011, https://map.example.com
+CORS_ORIGINS=["http://localhost:8011"]
+```
+
+Mỗi giá trị phải là `scheme://host[:port]`. Dấu `/` cuối bị bỏ; có đường dẫn hoặc
+thiếu scheme thì bị từ chối kèm thông báo nêu đúng giá trị sai. `*` được giữ
+nguyên. Trình duyệt gửi header `Origin` không có đường dẫn và không có `/` cuối,
+nên một giá trị lưu sai định dạng sẽ **không bao giờ khớp** — chặn sớm lúc khởi
+động dễ chẩn đoán hơn nhiều so với lỗi CORS mơ hồ trên trình duyệt.
+
+`Annotated[list[str], NoDecode]` trong `app/settings.py` là bắt buộc, không phải
+trang trí: thiếu nó, pydantic-settings JSON-decode giá trị env ngay trong settings
+source, **trước** khi validator chạy, và mọi cách viết không phải JSON đều chết ở
+đó bằng `SettingsError`. Test phải đi qua biến môi trường thật
+(`monkeypatch.setenv`) — dựng `Settings(...)` bằng constructor đi đường khác và
+bỏ qua đúng tầng gây lỗi.
 
 ## Ngữ nghĩa đánh giá rule
 
