@@ -159,6 +159,19 @@ def path_check(
     port: int | None,
     protocol: str = "any",
 ) -> PathResult:
+    if ":" in source or ":" in destination:
+        # Every address set in this module is built with FAMILY = 4. Saying so
+        # beats returning "no firewall could receive this", which blames the
+        # configuration for a gap in the tool.
+        return PathResult(
+            verdict="unrouted",
+            truncated=True,
+            stopped_reason=(
+                "IPv6 is not supported for multi-firewall analysis yet; "
+                "use the single-firewall Path check tab"
+            ),
+        )
+
     entry = _entry_point(firewalls, source)
     if entry is None:
         return PathResult(
@@ -170,6 +183,12 @@ def path_check(
     result = PathResult(verdict="pass")
     seen: set[tuple[str, str]] = set()
 
+    # Both are rewritten as the packet crosses a firewall that translates them.
+    # Routing the original public address instead is what made a published
+    # service look reachable when the firewall behind it refused the traffic.
+    current_destination = destination
+    current_port = port
+
     for _ in range(MAX_HOPS):
         if (firewall.id, in_interface) in seen:
             result.truncated = True
@@ -178,9 +197,17 @@ def path_check(
         seen.add((firewall.id, in_interface))
 
         decision = check(
-            firewall.config, source, destination, port, protocol, in_interface=in_interface
+            firewall.config,
+            source,
+            current_destination,
+            current_port,
+            protocol,
+            in_interface=in_interface,
         )
-        route = routing.lookup(routing.build_table(firewall.config), destination)
+        if decision.translated_address:
+            current_destination = decision.translated_address
+            current_port = decision.translated_port
+        route = routing.lookup(routing.build_table(firewall.config), current_destination)
 
         result.hops.append(
             Hop(
@@ -202,7 +229,7 @@ def path_check(
 
         if route is None:
             result.verdict = "unrouted"
-            result.stopped_reason = f"{firewall.name} has no route to {destination}"
+            result.stopped_reason = f"{firewall.name} has no route to {current_destination}"
             return result
 
         if route.next_hop is None:

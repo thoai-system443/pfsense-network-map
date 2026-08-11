@@ -126,7 +126,6 @@ PUBLISHED = """
 """
 
 
-@pytest.mark.xfail(strict=True, reason="audit finding, not fixed yet")
 def test_explore_to_reports_the_internet_as_a_source():
     regions = explore_to(build(PUBLISHED), "10.10.20.50", 8443, "tcp")
     passing = [r for r in regions if r.verdict == "pass"]
@@ -138,7 +137,6 @@ def test_explore_to_reports_the_internet_as_a_source():
 # --------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="audit finding, not fixed yet")
 def test_explore_from_applies_nat_like_check():
     config = load("nat_portforward.xml")
     assert check(config, "8.8.8.8", "203.0.113.2", 443, "tcp").verdict == "pass"
@@ -161,7 +159,6 @@ def nat_chain():
     ]
 
 
-@pytest.mark.xfail(strict=True, reason="audit finding, not fixed yet")
 def test_the_chain_follows_the_nat_target_not_the_public_address():
     result = fabric.path_check(nat_chain(), "8.8.8.8", "203.0.113.2", 443, "tcp")
     assert [hop.firewall_name for hop in result.hops] == ["fw-edge", "fw-core"]
@@ -173,7 +170,6 @@ def test_the_chain_follows_the_nat_target_not_the_public_address():
 # --------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="audit finding, not fixed yet")
 def test_an_ipv6_query_says_it_is_unsupported():
     firewalls = [fabric.Firewall(id="fw-0", name="fw", config=load("routed.xml"))]
     result = fabric.path_check(firewalls, "2001:db8::1", "2001:db8::2", 443, "tcp")

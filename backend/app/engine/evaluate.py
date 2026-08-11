@@ -173,6 +173,68 @@ def _destination_region(resolver: Resolver, rule: FilterRule, family: int) -> Re
     return RectSet.from_sets(addresses, ports)
 
 
+def _nat_aliases(
+    config: ParsedConfig, resolver: Resolver, in_iface: str, protocol: str
+) -> list[tuple[IpSet, PortSet, IpSet, PortSet]]:
+    """(public addresses, public ports, internal addresses, internal ports).
+
+    A port forward means traffic aimed at the public pair actually lands on the
+    internal one, so whatever the ruleset says about the internal pair is also
+    true of the public pair.
+    """
+    out: list[tuple[IpSet, PortSet, IpSet, PortSet]] = []
+    for forward in config.nat.port_forwards:
+        if forward.disabled or forward.interface != in_iface:
+            continue
+        if not protocol_matches(forward.protocol, protocol):
+            continue
+        public_addresses, _ = resolver.addresses(forward.destination, 4)
+        public_ports, _ = resolver.ports(forward.destination)
+        if public_addresses.is_empty() or not forward.target:
+            continue
+        try:
+            internal = IpSet.from_cidr(forward.target)
+        except ValueError:
+            continue
+        internal_ports = (
+            PortSet.parse(forward.local_port) if forward.local_port else public_ports
+        )
+        out.append((public_addresses, public_ports, internal, internal_ports))
+    return out
+
+
+def _add_public_aliases(
+    regions: list[Region],
+    forwarded: list[tuple[IpSet, PortSet, IpSet, PortSet]],
+    family: int,
+) -> list[Region]:
+    if not forwarded or family != 4:
+        return regions
+
+    extra: list[Region] = []
+    for region in regions:
+        if region.verdict != "pass":
+            continue
+        covered = IpSet.empty(family)
+        for cidr in region.addresses:
+            covered = covered.union(IpSet.from_cidr(cidr))
+        ports = PortSet.parse(region.ports)
+        for public_addresses, public_ports, internal, internal_ports in forwarded:
+            if covered.intersect(internal).is_empty():
+                continue
+            if ports.intersect(internal_ports).is_empty():
+                continue
+            extra.append(
+                Region(
+                    addresses=public_addresses.to_cidrs(),
+                    ports=public_ports.to_spec(),
+                    verdict=region.verdict,
+                    decided_by=region.decided_by,
+                )
+            )
+    return regions + extra
+
+
 def _to_regions(area: RectSet, verdict: str, ref: RuleRef | None) -> list[Region]:
     return [
         Region(addresses=addrs.to_cidrs(), ports=ports.to_spec(), verdict=verdict, decided_by=ref)
@@ -196,6 +258,11 @@ def explore_from(
     resolver = Resolver(config)
     family = 6 if ":" in source else 4
     in_iface = in_interface or ruleset.inbound_interface(config, source)
+
+    # Destinations a port forward rewrites are reachable under their public
+    # address, so the region has to be reported there too. Without this,
+    # explore_from silently disagrees with check() on every published service.
+    forwarded = _nat_aliases(config, resolver, in_iface, protocol)
 
     unsettled = RectSet.full(family)
     settled: list[Region] = []
@@ -233,7 +300,40 @@ def explore_from(
         unsettled = unsettled.subtract(remaining)
 
     settled.extend(_to_regions(unsettled, "block", None))
+    settled = _add_public_aliases(settled, forwarded, family)
     return [r for r in settled if r.addresses]
+
+
+def _inbound_spaces(
+    config: ParsedConfig, resolver: Resolver, family: int
+) -> list[tuple[str, IpSet]]:
+    """(interface, addresses that can arrive on it).
+
+    Each enabled interface contributes its own subnet. The interface holding the
+    default route additionally contributes everything outside the site, because
+    that is where internet traffic arrives.
+    """
+    spaces: list[tuple[str, IpSet]] = []
+    internal = IpSet.empty(family)
+    for iface in config.interfaces:
+        if not iface.enabled:
+            continue
+        subnet = resolver.interface_subnet(iface.name, family)
+        if subnet.is_empty():
+            continue
+        spaces.append((iface.name, subnet))
+        internal = internal.union(subnet)
+
+    default = next(
+        (g for g in config.gateways if g.default and not g.disabled and g.interface), None
+    )
+    edge = default.interface if default else "wan"
+    outside = internal.complement()
+    if not outside.is_empty() and any(name == edge for name, _ in spaces):
+        spaces = [
+            (name, space.union(outside) if name == edge else space) for name, space in spaces
+        ]
+    return spaces
 
 
 def explore_to(
@@ -247,18 +347,20 @@ def explore_to(
     family = 6 if ":" in destination else 4
     out: list[SourceRegion] = []
 
-    for iface in config.interfaces:
-        if not iface.enabled:
-            continue
-        subnet = resolver.interface_subnet(iface.name, family)
-        if subnet.is_empty():
+    # The internet is nobody's interface subnet, so walking interfaces alone can
+    # never report "this host is reachable from outside" — the single most
+    # important answer this query can give.
+    for iface_name, source_space in _inbound_spaces(config, resolver, family):
+        subnet = source_space
+        iface = config.interface_by_name(iface_name)
+        if iface is None:
             continue
 
         unsettled = subnet
         provisional: list[tuple[IpSet, str, RuleRef]] = []
         settled: list[SourceRegion] = []
 
-        for rule in ruleset.build(config, iface.name):
+        for rule in ruleset.build(config, iface_name):
             if not decides(rule):
                 continue
             if not family_matches(rule.ipprotocol, family):
@@ -280,7 +382,7 @@ def explore_to(
 
             if rule.quick:
                 settled.append(
-                    SourceRegion(iface.name, slice_.to_cidrs(), rule.action, RuleRef.of(rule))
+                    SourceRegion(iface_name, slice_.to_cidrs(), rule.action, RuleRef.of(rule))
                 )
                 unsettled = unsettled.subtract(slice_)
             else:
@@ -291,11 +393,11 @@ def explore_to(
             remaining = area.intersect(unsettled)
             if remaining.is_empty():
                 continue
-            settled.append(SourceRegion(iface.name, remaining.to_cidrs(), verdict, ref))
+            settled.append(SourceRegion(iface_name, remaining.to_cidrs(), verdict, ref))
             unsettled = unsettled.subtract(remaining)
 
         if not unsettled.is_empty():
-            settled.append(SourceRegion(iface.name, unsettled.to_cidrs(), "block", None))
+            settled.append(SourceRegion(iface_name, unsettled.to_cidrs(), "block", None))
         out.extend(settled)
 
     return out
