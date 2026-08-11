@@ -22,6 +22,10 @@ export function RiskPage() {
   const { configId = "" } = useParams<{ configId: string }>();
   const [port, setPort] = useState("");
   const [protocol, setProtocol] = useState("tcp");
+  // Defaults to on: "which of my own machines can get at this" is the question
+  // asked most of the time, and leaving the internet in buries it under rows
+  // reading "LAN -> the whole internet".
+  const [internalOnly, setInternalOnly] = useState(true);
   const [searched, setSearched] = useState<string | null>(null);
 
   const report = useQuery({
@@ -30,7 +34,7 @@ export function RiskPage() {
   });
 
   const portSearch = useMutation<PortAccess[], Error>({
-    mutationFn: () => getPortAccess(configId, Number(port), protocol),
+    mutationFn: () => getPortAccess(configId, Number(port), protocol, internalOnly),
     onSuccess: () => setSearched(port),
   });
 
@@ -61,8 +65,11 @@ export function RiskPage() {
 
       <section className="space-y-2">
         <h2 className="font-medium">Who reaches a port</h2>
-        <p className="text-sm text-muted-foreground">
+        <p className="max-w-3xl text-sm text-muted-foreground">
           Every source allowed to reach anything at all on this port, across all destinations.
+          <strong> Internal only</strong> drops the internet from both ends: it is not used as a
+          source, and destinations are clipped to your own address space. Untick it to see inbound
+          exposure from the internet as well.
         </p>
         <form
           className="flex flex-wrap items-end gap-4"
@@ -96,6 +103,16 @@ export function RiskPage() {
               ))}
             </select>
           </label>
+          <label className="flex cursor-pointer items-center gap-2 pb-1.5 text-sm" htmlFor="risk-internal">
+            <input
+              id="risk-internal"
+              type="checkbox"
+              className="size-4 cursor-pointer accent-[var(--primary)]"
+              checked={internalOnly}
+              onChange={(event) => setInternalOnly(event.target.checked)}
+            />
+            Internal only
+          </label>
           <Button type="submit" disabled={!port || portSearch.isPending}>
             Who reaches it
           </Button>
@@ -110,7 +127,8 @@ export function RiskPage() {
         {portSearch.data &&
           (portSearch.data.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              Nothing reaches port {searched} on {protocol}.
+              Nothing reaches port {searched} on {protocol}
+              {internalOnly ? " from inside the network" : ""}.
             </p>
           ) : (
             <Table

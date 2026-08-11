@@ -2,6 +2,7 @@
 
 | Version | Date | Changes |
 |---|---|---|
+| 1.6.0 | 2026-08-10 | Who reaches a port: thêm ô "Internal only", mặc định bật |
 | 1.5.0 | 2026-08-10 | Access map: chuột phải để ẩn zone. Bảng Inventory giới hạn 300 dòng |
 | 1.4.0 | 2026-08-10 | Nạp nhiều firewall, tab Across firewalls, cột Firewall trong Inventory/Risk |
 | 1.3.0 | 2026-08-10 | Risk: chỉ liệt kê object có rủi ro; bỏ mục địa chỉ trống ở cả frontend lẫn backend |

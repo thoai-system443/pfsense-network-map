@@ -227,8 +227,23 @@ def exposures(config: ParsedConfig) -> list[Exposure]:
     return out
 
 
-def port_reachability(config: ParsedConfig, port: int, protocol: str = "any") -> list[PortAccess]:
-    """Every source that reaches anything at all on this port."""
+def port_reachability(
+    config: ParsedConfig,
+    port: int,
+    protocol: str = "any",
+    internal_only: bool = True,
+) -> list[PortAccess]:
+    """Every source that reaches anything at all on this port.
+
+    internal_only drops the internet from **both** ends: it is not used as a
+    source, and destinations are clipped to the site's own address space. Only
+    dropping it as a source would still leave rows reading "LAN -> 0.0.0.0/0",
+    which makes the internal-only label a lie.
+
+    The default is internal-only because that is the question being asked most
+    of the time: which of my own machines can get at this. Untick it to see the
+    inbound exposure as well.
+    """
     resolver = Resolver(config)
     zones = _zone_sets(config, resolver)
     internal = _internal_space(zones)
@@ -236,7 +251,7 @@ def port_reachability(config: ParsedConfig, port: int, protocol: str = "any") ->
 
     origins = [(zone_id, label, addresses) for zone_id, label, addresses in zones]
     internet_probe = _probe(internal.complement())
-    if internet_probe:
+    if internet_probe and not internal_only:
         origins.append(("internet", INTERNET_LABEL, internal.complement()))
 
     out: list[PortAccess] = []
@@ -249,11 +264,19 @@ def port_reachability(config: ParsedConfig, port: int, protocol: str = "any") ->
                 continue
             if PortSet.parse(region.ports).intersect(wanted).is_empty():
                 continue
+
+            destinations = region.addresses
+            if internal_only:
+                reachable = _region_addresses(region).intersect(internal)
+                if reachable.is_empty():
+                    continue
+                destinations = reachable.to_cidrs()
+
             out.append(
                 PortAccess(
                     source_id=origin_id,
                     source_label=label,
-                    destination_cidrs=region.addresses,
+                    destination_cidrs=destinations,
                     ports=region.ports,
                     rule=region.decided_by,
                 )

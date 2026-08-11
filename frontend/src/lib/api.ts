@@ -83,5 +83,12 @@ export const queryTo = (
 
 export const getRiskReport = (id: string) => request<RiskReport>(`/configs/${id}/risk`);
 
-export const getPortAccess = (id: string, port: number, protocol: string) =>
-  request<PortAccess[]>(`/configs/${id}/risk/port?port=${port}&protocol=${protocol}`);
+export const getPortAccess = (
+  id: string,
+  port: number,
+  protocol: string,
+  internalOnly: boolean,
+) =>
+  request<PortAccess[]>(
+    `/configs/${id}/risk/port?port=${port}&protocol=${protocol}&internal_only=${internalOnly}`,
+  );

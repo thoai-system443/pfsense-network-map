@@ -93,6 +93,47 @@ class TestPortReachability:
         """
         assert risk.port_reachability(load("basic.xml"), 9999, "tcp") == []
 
+    def test_internal_only_drops_the_internet_as_a_source(self):
+        """risky.xml publishes DB_SERVER on 8443 to anything on the internet."""
+        everywhere = risk.port_reachability(load("risky.xml"), 8443, "tcp", internal_only=False)
+        internal = risk.port_reachability(load("risky.xml"), 8443, "tcp", internal_only=True)
+        assert "Internet" in {r.source_label for r in everywhere}
+        assert "Internet" not in {r.source_label for r in internal}
+
+    def test_internal_only_clips_destinations_to_the_internal_space(self):
+        """Asserted as containment, not as a literal CIDR string.
+
+        LAN is allowed to any:443, but the DMZ slice is settled by an earlier
+        rule, so the region is "everything except 10.10.20.0/24" — a list of
+        CIDRs that never contains 0.0.0.0/0.
+        """
+        from app.engine.ipset import IpSet
+
+        site = IpSet.empty(4)
+        for cidr in ["203.0.113.0/30", "192.168.1.0/24", "10.10.20.0/24", "172.16.5.0/24"]:
+            site = site.union(IpSet.from_cidr(cidr))
+
+        def outside(results):
+            return any(
+                not IpSet.from_cidr(cidr).subtract(site).is_empty()
+                for r in results
+                for cidr in r.destination_cidrs
+            )
+
+        assert outside(risk.port_reachability(load("risky.xml"), 443, "tcp", internal_only=False))
+        assert not outside(
+            risk.port_reachability(load("risky.xml"), 443, "tcp", internal_only=True)
+        )
+
+    def test_internal_only_keeps_a_purely_internal_flow_intact(self):
+        results = risk.port_reachability(load("risky.xml"), 5432, "tcp", internal_only=True)
+        assert "DMZ" in {r.source_label for r in results}
+
+    def test_internal_only_is_the_default(self):
+        assert risk.port_reachability(load("risky.xml"), 8443, "tcp") == risk.port_reachability(
+            load("risky.xml"), 8443, "tcp", internal_only=True
+        )
+
     def test_a_wide_open_zone_shows_up_for_every_port(self):
         """LAN reaches DMZ on all ports, so it must appear for an arbitrary one."""
         results = risk.port_reachability(load("risky.xml"), 4444, "tcp")

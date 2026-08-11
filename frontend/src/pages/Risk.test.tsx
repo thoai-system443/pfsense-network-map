@@ -154,7 +154,7 @@ describe("RiskPage", () => {
     await userEvent.type(await screen.findByLabelText(/port/i), "5432");
     await userEvent.click(screen.getByRole("button", { name: /who reaches/i }));
 
-    expect(spy).toHaveBeenCalledWith("abc", 5432, "tcp");
+    expect(spy).toHaveBeenCalledWith("abc", 5432, "tcp", true);
     const results = await screen.findByRole("table", { name: /sources reaching the port/i });
     expect(within(results).getByText("10.10.20.50/32")).toBeInTheDocument();
     expect(within(results).getByText("DMZ")).toBeInTheDocument();
@@ -174,5 +174,55 @@ describe("RiskPage", () => {
     vi.spyOn(api, "getRiskReport").mockRejectedValue(new Error("config not found"));
     renderPage();
     expect(await screen.findByText(/config not found/)).toBeInTheDocument();
+  });
+});
+
+describe("the internal-only switch", () => {
+  const rows = [
+    {
+      firewall: "fw-edge",
+      source_id: "opt1",
+      source_label: "DMZ",
+      destination_cidrs: ["10.10.20.50/32"],
+      ports: "5432",
+      rule,
+    },
+  ];
+
+  afterEach(() => vi.restoreAllMocks());
+
+  async function search(port: string) {
+    vi.spyOn(api, "getRiskReport").mockResolvedValue(report);
+    const spy = vi.spyOn(api, "getPortAccess").mockResolvedValue(rows);
+    renderPage();
+    await userEvent.type(await screen.findByLabelText(/^port$/i), port);
+    return spy;
+  }
+
+  it("is on by default", async () => {
+    await search("5432");
+    expect(screen.getByLabelText(/internal only/i)).toBeChecked();
+  });
+
+  it("asks the backend for internal-only results", async () => {
+    const spy = await search("5432");
+    await userEvent.click(screen.getByRole("button", { name: /who reaches/i }));
+    expect(spy).toHaveBeenCalledWith("abc", 5432, "tcp", true);
+  });
+
+  it("includes the internet once unticked", async () => {
+    const spy = await search("5432");
+    await userEvent.click(screen.getByLabelText(/internal only/i));
+    await userEvent.click(screen.getByRole("button", { name: /who reaches/i }));
+    expect(spy).toHaveBeenCalledWith("abc", 5432, "tcp", false);
+  });
+
+  it("says the empty result was an internal-only search", async () => {
+    vi.spyOn(api, "getRiskReport").mockResolvedValue(report);
+    vi.spyOn(api, "getPortAccess").mockResolvedValue([]);
+    renderPage();
+    await userEvent.type(await screen.findByLabelText(/^port$/i), "9999");
+    await userEvent.click(screen.getByRole("button", { name: /who reaches/i }));
+    expect(await screen.findByText(/from inside the network/i)).toBeInTheDocument();
   });
 });
