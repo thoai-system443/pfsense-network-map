@@ -70,7 +70,6 @@ def test_a_single_host_in_the_subnet_is_still_answered_exactly():
     assert check(build(SUBNET_RULES), "192.168.1.9", "8.8.8.8", 443, "tcp").verdict == "pass"
 
 
-@pytest.mark.xfail(strict=True, reason="audit finding, not fixed yet")
 def test_a_subnet_source_is_split_by_verdict():
     """192.168.1.50 is blocked, the rest of the /24 passes. Both must be reported."""
     from app.engine.evaluate import check_regions
@@ -106,7 +105,6 @@ def test_udp_on_the_same_port_is_blocked():
     assert check(build(TCP_ONLY), "192.168.1.9", "8.8.8.8", 443, "udp").verdict == "block"
 
 
-@pytest.mark.xfail(strict=True, reason="audit finding, not fixed yet")
 def test_protocol_any_reports_each_protocol_separately():
     result = check(build(TCP_ONLY), "192.168.1.9", "8.8.8.8", 443, "any")
     assert result.per_protocol == {"tcp": "pass", "udp": "block", "icmp": "block"}
@@ -142,9 +140,9 @@ def test_explore_from_applies_nat_like_check():
     assert check(config, "8.8.8.8", "203.0.113.2", 443, "tcp").verdict == "pass"
 
     regions = explore_from(config, "8.8.8.8", "tcp")
-    assert any(
-        r.verdict == "pass" and touches(r.addresses, "203.0.113.2/32") for r in regions
-    ), "check() reaches the published address but explore_from does not"
+    assert any(r.verdict == "pass" and touches(r.addresses, "203.0.113.2/32") for r in regions), (
+        "check() reaches the published address but explore_from does not"
+    )
 
 
 # --------------------------------------------------------------------------
@@ -174,3 +172,68 @@ def test_an_ipv6_query_says_it_is_unsupported():
     firewalls = [fabric.Firewall(id="fw-0", name="fw", config=load("routed.xml"))]
     result = fabric.path_check(firewalls, "2001:db8::1", "2001:db8::2", 443, "tcp")
     assert "IPv6" in (result.stopped_reason or "")
+
+
+# --------------------------------------------------------------------------
+# The invariant that let bug 4 through: it was only ever run on fixtures
+# without NAT. Every fixture in the tree is checked now.
+# --------------------------------------------------------------------------
+
+ALL_FIXTURES = sorted(p.name for p in FIXTURES.glob("*.xml"))
+SAMPLE_TARGETS = [
+    ("192.168.1.50", "10.10.20.5", 443),
+    ("192.168.1.50", "8.8.8.8", 80),
+    ("8.8.8.8", "203.0.113.2", 443),
+    ("10.10.20.9", "192.168.1.10", 22),
+    ("10.20.5.10", "10.10.20.1", 8443),
+]
+
+
+@pytest.mark.parametrize("name", ALL_FIXTURES)
+def test_explore_from_agrees_with_check_on_every_fixture(name):
+    """explore_from is check run over the whole space. They must never differ."""
+    from app.engine.portset import PortSet
+
+    config = load(name)
+    if not config.interfaces:
+        pytest.skip("no interfaces to evaluate")
+
+    for source, destination, port in SAMPLE_TARGETS:
+        expected = check(config, source, destination, port, "tcp").verdict
+        regions = explore_from(config, source, "tcp")
+        matching = [
+            r
+            for r in regions
+            if not PortSet.parse(r.ports).intersect(PortSet.parse(str(port))).is_empty()
+            and touches(r.addresses, f"{destination}/32")
+        ]
+        verdicts = {r.verdict for r in matching}
+        assert verdicts <= {expected}, (
+            f"{name}: {source}->{destination}:{port} — check says {expected}, "
+            f"explore_from says {verdicts}"
+        )
+
+
+@pytest.mark.parametrize("name", ALL_FIXTURES)
+def test_check_regions_agrees_with_check_on_every_fixture(name):
+    """The set-based walk must reduce to the point answer for a single host."""
+    config = load(name)
+    if not config.interfaces:
+        pytest.skip("no interfaces to evaluate")
+
+    for source, destination, port in SAMPLE_TARGETS:
+        from app.engine.evaluate import check_regions
+
+        expected = check(config, source, destination, port, "tcp")
+        result = check_regions(
+            config,
+            IpSet.from_cidr(f"{source}/32"),
+            IpSet.from_cidr(f"{destination}/32"),
+            port,
+            "tcp",
+        )
+        verdicts = {r.verdict for r in result.regions}
+        assert verdicts == {expected.verdict}, (
+            f"{name}: {source}->{destination}:{port} — check says {expected.verdict}, "
+            f"check_regions says {verdicts}"
+        )

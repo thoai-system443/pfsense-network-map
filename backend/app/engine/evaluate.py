@@ -49,6 +49,12 @@ class TraceEntry:
     reason: str
 
 
+# The protocols "any" is expanded into. pf can carry others, but these are the
+# three a rule realistically names, and enumerating them is what turns "any"
+# from a guess into an answer.
+ANY_PROTOCOLS = ("tcp", "udp", "icmp")
+
+
 @dataclass
 class CheckResult:
     verdict: str
@@ -58,6 +64,24 @@ class CheckResult:
     translated_port: int | None = None
     unresolved: bool = False
     trace: list[TraceEntry] = field(default_factory=list)
+    #: Filled in only when the query asked for "any": verdict per protocol.
+    per_protocol: dict[str, str] | None = None
+    per_protocol_rules: dict[str, RuleRef | None] | None = None
+
+
+def _summarise(verdicts: list[str]) -> str:
+    """pass only when every protocol passes; partial when they disagree.
+
+    Reporting "pass" because one protocol out of three is allowed is how this
+    tool would tell someone their firewall permits traffic it actually denies —
+    or, worse, reassure them about a port that is open on UDP only.
+    """
+    distinct = set(verdicts)
+    if distinct == {"pass"}:
+        return "pass"
+    if "pass" not in distinct:
+        return "block"
+    return "partial"
 
 
 def decides(rule: FilterRule) -> bool:
@@ -119,6 +143,9 @@ def check(
     arrives on the interface facing the previous one, which the source address
     says nothing about.
     """
+    if protocol == "any":
+        return _check_every_protocol(config, source, destination, port, in_interface)
+
     resolver = Resolver(config)
     family = 6 if ":" in source else 4
     in_iface = in_interface or ruleset.inbound_interface(config, source)
@@ -151,6 +178,37 @@ def check(
     return result
 
 
+def _check_every_protocol(
+    config: ParsedConfig,
+    source: str,
+    destination: str,
+    port: int | None,
+    in_interface: str | None,
+) -> CheckResult:
+    results = {
+        name: check(config, source, destination, port, name, in_interface) for name in ANY_PROTOCOLS
+    }
+    verdicts = {name: result.verdict for name, result in results.items()}
+    summary = _summarise(list(verdicts.values()))
+
+    # When they agree, the deciding rule is meaningful; when they disagree there
+    # is no single rule to name, and the breakdown is the answer.
+    representative = next(
+        (r for name, r in results.items() if r.verdict == summary), results[ANY_PROTOCOLS[0]]
+    )
+    return CheckResult(
+        verdict=summary,
+        decided_by=representative.decided_by if summary != "partial" else None,
+        in_interface=representative.in_interface,
+        translated_address=representative.translated_address,
+        translated_port=representative.translated_port,
+        unresolved=any(r.unresolved for r in results.values()),
+        trace=representative.trace if summary != "partial" else [],
+        per_protocol=verdicts,
+        per_protocol_rules={name: r.decided_by for name, r in results.items()},
+    )
+
+
 @dataclass(frozen=True)
 class Region:
     addresses: list[str]
@@ -165,6 +223,139 @@ class SourceRegion:
     addresses: list[str]
     verdict: str
     decided_by: RuleRef | None
+
+
+@dataclass(frozen=True)
+class PathRegion:
+    sources: list[str]
+    destinations: list[str]
+    verdict: str
+    decided_by: RuleRef | None
+
+
+@dataclass
+class RegionResult:
+    regions: list[PathRegion]
+    in_interface: str
+    unresolved: bool = False
+    translated_address: str | None = None
+    translated_port: int | None = None
+
+
+def _first_address(addresses: IpSet) -> str | None:
+    import ipaddress
+
+    if not addresses.items:
+        return None
+    return str(ipaddress.ip_address(addresses.items[0][0]))
+
+
+def check_regions(
+    config: ParsedConfig,
+    source_set: IpSet,
+    destination_set: IpSet,
+    port: int | None,
+    protocol: str = "any",
+    in_interface: str | None = None,
+) -> RegionResult:
+    """Partition source x destination by verdict.
+
+    A subnet is a set of addresses and the ruleset can treat them differently:
+    one quarantined host inside an otherwise permitted /24 is exactly the case a
+    single-address answer hides. Every part of the input space appears in the
+    output with its own verdict and the rule that decided it.
+
+    The walk is the same last-match / quick rule check() applies, run over the
+    whole rectangle at once instead of at one point.
+    """
+    family = source_set.family
+    resolver = Resolver(config)
+    probe = _first_address(source_set)
+    in_iface = in_interface or (ruleset.inbound_interface(config, probe) if probe else "wan")
+
+    # NAT is applied when the destination is one address, which is what the
+    # Path check form produces. A destination set spanning several port-forward
+    # targets is not translated; that case is recorded as a known limit.
+    translated_address = None
+    translated_port = None
+    effective_destination = destination_set
+    single = _first_address(destination_set)
+    is_one_address = len(destination_set.items) == 1 and (
+        destination_set.items[0][0] == destination_set.items[0][1]
+    )
+    if single and is_one_address:
+        translation = nat.translate_destination(config, resolver, in_iface, single, port, protocol)
+        if translation:
+            translated_address = translation.address
+            translated_port = translation.port
+            effective_destination = IpSet.from_cidr(translation.address)
+            port = translation.port
+
+    unsettled = RectSet.cross(source_set, effective_destination)
+    settled: list[PathRegion] = []
+    provisional: list[tuple[RectSet, str, RuleRef]] = []
+    unresolved = False
+
+    for rule in ruleset.build(config, in_iface):
+        if not decides(rule):
+            continue
+        if not family_matches(rule.ipprotocol, family):
+            continue
+        if not protocol_matches(rule.protocol, protocol):
+            continue
+
+        if port is not None:
+            rule_ports, port_unresolved = resolver.ports(rule.destination)
+            unresolved = unresolved or port_unresolved
+            if rule_ports.intersect(PortSet.parse(str(port))).is_empty():
+                continue
+
+        rule_sources, src_unresolved = resolver.addresses(rule.source, family)
+        rule_destinations, dst_unresolved = resolver.addresses(rule.destination, family)
+        unresolved = unresolved or src_unresolved or dst_unresolved
+
+        slice_ = RectSet.cross(
+            rule_sources.intersect(source_set),
+            rule_destinations.intersect(effective_destination),
+        ).intersect(unsettled)
+        if slice_.is_empty():
+            continue
+
+        if rule.quick:
+            settled.extend(_to_path_regions(slice_, rule.action, RuleRef.of(rule)))
+            unsettled = unsettled.subtract(slice_)
+        else:
+            provisional = [(area.subtract(slice_), v, r) for area, v, r in provisional]
+            provisional.append((slice_, rule.action, RuleRef.of(rule)))
+
+    for area, verdict, ref in provisional:
+        remaining = area.intersect(unsettled)
+        if remaining.is_empty():
+            continue
+        settled.extend(_to_path_regions(remaining, verdict, ref))
+        unsettled = unsettled.subtract(remaining)
+
+    settled.extend(_to_path_regions(unsettled, "block", None))
+    return RegionResult(
+        regions=[r for r in settled if r.sources and r.destinations],
+        in_interface=in_iface,
+        unresolved=unresolved,
+        translated_address=translated_address,
+        translated_port=translated_port,
+    )
+
+
+def _to_path_regions(area: RectSet, verdict: str, ref: RuleRef | None) -> list[PathRegion]:
+    return [
+        PathRegion(
+            sources=sources.to_cidrs(),
+            destinations=destinations.to_cidrs(),
+            verdict=verdict,
+            decided_by=ref,
+        )
+        for sources, destinations in area.to_address_pairs()
+        if not sources.is_empty() and not destinations.is_empty()
+    ]
 
 
 def _destination_region(resolver: Resolver, rule: FilterRule, family: int) -> RectSet:
@@ -196,9 +387,7 @@ def _nat_aliases(
             internal = IpSet.from_cidr(forward.target)
         except ValueError:
             continue
-        internal_ports = (
-            PortSet.parse(forward.local_port) if forward.local_port else public_ports
-        )
+        internal_ports = PortSet.parse(forward.local_port) if forward.local_port else public_ports
         out.append((public_addresses, public_ports, internal, internal_ports))
     return out
 
@@ -212,6 +401,7 @@ def _add_public_aliases(
         return regions
 
     extra: list[Region] = []
+    claimed = RectSet.empty(family)
     for region in regions:
         if region.verdict != "pass":
             continue
@@ -224,6 +414,7 @@ def _add_public_aliases(
                 continue
             if ports.intersect(internal_ports).is_empty():
                 continue
+            area = RectSet.from_sets(public_addresses, public_ports)
             extra.append(
                 Region(
                     addresses=public_addresses.to_cidrs(),
@@ -232,7 +423,23 @@ def _add_public_aliases(
                     decided_by=region.decided_by,
                 )
             )
-    return regions + extra
+            claimed = claimed.union(area)
+
+    if claimed.is_empty():
+        return regions
+
+    # The public pair already carries a verdict from the walk — "block", since
+    # no rule names the public address. Appending the alias without taking that
+    # slice away would leave two regions disagreeing about the same traffic, and
+    # the output would stop being a partition.
+    rebuilt: list[Region] = []
+    for region in regions:
+        covered = IpSet.empty(family)
+        for cidr in region.addresses:
+            covered = covered.union(IpSet.from_cidr(cidr))
+        remaining = RectSet.from_sets(covered, PortSet.parse(region.ports)).subtract(claimed)
+        rebuilt.extend(_to_regions(remaining, region.verdict, region.decided_by))
+    return rebuilt + extra
 
 
 def _to_regions(area: RectSet, verdict: str, ref: RuleRef | None) -> list[Region]:
@@ -330,9 +537,7 @@ def _inbound_spaces(
     edge = default.interface if default else "wan"
     outside = internal.complement()
     if not outside.is_empty() and any(name == edge for name, _ in spaces):
-        spaces = [
-            (name, space.union(outside) if name == edge else space) for name, space in spaces
-        ]
+        spaces = [(name, space.union(outside) if name == edge else space) for name, space in spaces]
     return spaces
 
 

@@ -72,6 +72,24 @@ class RectSet:
         return cls(family, [Rect(0, _MAX_ADDR[family], 0, _MAX_PORT)])
 
     @classmethod
+    def cross(cls, x: IpSet, y: IpSet) -> "RectSet":
+        """Both axes are addresses: used for source x destination partitions."""
+        return cls(
+            x.family,
+            [Rect(x_lo, x_hi, y_lo, y_hi) for x_lo, x_hi in x.items for y_lo, y_hi in y.items],
+        )
+
+    def to_address_pairs(self) -> list[tuple[IpSet, IpSet]]:
+        """Rectangles grouped by their second axis, both read as addresses."""
+        by_y: dict[tuple[int, int], list[tuple[int, int]]] = {}
+        for rect in self.rects:
+            by_y.setdefault((rect.p_lo, rect.p_hi), []).append((rect.a_lo, rect.a_hi))
+        return [
+            (IpSet(self.family, intervals.normalize(xs)), IpSet(self.family, [(y_lo, y_hi)]))
+            for (y_lo, y_hi), xs in by_y.items()
+        ]
+
+    @classmethod
     def from_sets(cls, addrs: IpSet, ports: PortSet) -> "RectSet":
         rects = [
             Rect(a_lo, a_hi, p_lo, p_hi) for a_lo, a_hi in addrs.items for p_lo, p_hi in ports.items
