@@ -116,3 +116,40 @@ describe("InventoryPage", () => {
     expect(link).toHaveAttribute("href", "/c/abc/search?source=192.168.1.1%2F24");
   });
 });
+
+describe("large rulesets", () => {
+  const many = Array.from({ length: 400 }, (_, index) => ({
+    firewall: "fw-edge",
+    name: `opt${index}`,
+    descr: `SEG${index}`,
+    if_: `em${index}`,
+    ipaddr: `10.0.${index % 250}.1`,
+    subnet: 24,
+    enabled: true,
+    is_vlan: false,
+    vlan_tag: null,
+    parent_if: null,
+  }));
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it("caps the rows it renders", async () => {
+    vi.spyOn(api, "getInterfaces").mockResolvedValue(many);
+    renderPage();
+    await screen.findByText("SEG0");
+    expect(document.querySelectorAll("tbody tr")).toHaveLength(300);
+  });
+
+  it("says how many rows it left out instead of stopping silently", async () => {
+    vi.spyOn(api, "getInterfaces").mockResolvedValue(many);
+    renderPage();
+    expect(await screen.findByText(/first 300 of 400 rows/i)).toBeInTheDocument();
+  });
+
+  it("says nothing when everything fits", async () => {
+    vi.spyOn(api, "getInterfaces").mockResolvedValue(many.slice(0, 10));
+    renderPage();
+    await screen.findByText("SEG0");
+    expect(screen.queryByText(/first 300 of/i)).not.toBeInTheDocument();
+  });
+});

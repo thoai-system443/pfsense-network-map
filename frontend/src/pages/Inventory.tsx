@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { Children } from "react";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
@@ -226,21 +227,43 @@ export function InventoryPage() {
   );
 }
 
+/**
+ * A large ruleset is a large number of DOM rows, and that is what actually makes
+ * the browser work here — the graph pages stay small however many rules exist.
+ * Capping in this one component covers every tab.
+ *
+ * The cap is announced, never silent: a table that quietly stops at row 300
+ * misleads far worse than a slow one.
+ */
+const MAX_ROWS = 300;
+
 function Table({ headers, children }: { headers: string[]; children: React.ReactNode }) {
+  const rows = Children.toArray(children);
+  const shown = rows.slice(0, MAX_ROWS);
+  const hidden = rows.length - shown.length;
+
   return (
-    <div className="overflow-x-auto rounded-lg border bg-card">
-      <table className="w-full text-left text-sm">
-        <thead>
-          <tr className="border-b">
-            {headers.map((header) => (
-              <th key={header} className="px-4 py-2 font-medium text-muted-foreground">
-                {header}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody className="divide-y">{children}</tbody>
-      </table>
+    <div className="space-y-2">
+      {hidden > 0 && (
+        <p className="text-sm text-accent">
+          Showing the first {MAX_ROWS} of {rows.length.toLocaleString("en-US")} rows. Narrow the
+          filter to reach the rest.
+        </p>
+      )}
+      <div className="overflow-x-auto rounded-lg border bg-card">
+        <table className="w-full text-left text-sm">
+          <thead>
+            <tr className="border-b">
+              {headers.map((header) => (
+                <th key={header} className="px-4 py-2 font-medium text-muted-foreground">
+                  {header}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y">{shown}</tbody>
+        </table>
+      </div>
     </div>
   );
 }

@@ -2,6 +2,7 @@
 
 | Version | Date | Changes |
 |---|---|---|
+| 1.5.0 | 2026-08-10 | Access map: chuột phải để ẩn zone. Bảng Inventory giới hạn 300 dòng |
 | 1.4.0 | 2026-08-10 | Nạp nhiều firewall, tab Across firewalls, cột Firewall trong Inventory/Risk |
 | 1.3.0 | 2026-08-10 | Risk: chỉ liệt kê object có rủi ro; bỏ mục địa chỉ trống ở cả frontend lẫn backend |
 | 1.2.0 | 2026-08-10 | Thêm trang Risk: 4 tiêu chí phơi nhiễm, tra theo port, địa chỉ trống, deny-all |
@@ -106,6 +107,31 @@ file cần chọn.
 
 Tab đầu của Search là "Across firewalls" (đi hết chuỗi). Ba tab còn lại vẫn tính
 trên **một** firewall — hữu ích khi muốn soi riêng một bộ rule.
+
+## Hiệu năng: chỗ nặng không nằm ở GPU
+
+Đo trên config 3000 rule: trang đồ thị trả về **26 KB, 16 node** — trình duyệt
+vẽ xong tức thì, thời gian chờ là backend tính. Trang nặng thật là **Inventory**,
+vì `/rules` trả 1,18 MB và dựng vài nghìn dòng DOM.
+
+Nên cách sửa là **giới hạn số dòng** (300, cắt trong chính component `Table` nên
+áp cho cả bốn tab), không phải bật GPU. Số dòng bị bỏ luôn được in ra — một bảng
+lặng lẽ dừng ở dòng 300 gây hiểu nhầm tệ hơn nhiều so với một bảng chậm.
+
+Đừng thêm `will-change: transform` để "tăng tốc GPU" mà không đo trước. React
+Flow đã dùng CSS transform cho viewport, phần đó vốn đã do GPU composite.
+
+## Access map: ẩn zone
+
+Chuột phải vào một zone mở menu ẩn nó cùng mọi luồng chạm nó. Ẩn khác với focus:
+focus là "chỉ xem cái này", ẩn là "đừng bao giờ cho tôi thấy cái này"; hai bộ lọc
+cộng dồn được.
+
+Menu đóng được bằng **Escape** lẫn click ra ngoài. Chỉ có click ra ngoài thì
+người dùng bàn phím bị kẹt.
+
+Mục trong menu mang `role="menuitem"`, không phải `role="button"` — đó là hình
+dạng ARIA đúng, nên test phải query theo `menuitem`.
 
 ## Gotchas
 

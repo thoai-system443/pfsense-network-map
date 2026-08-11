@@ -20,6 +20,7 @@ export interface FlowCanvasProps {
   edges: CanvasEdge[];
   onEdgeClick?: (edgeId: string) => void;
   onNodeClick?: (nodeId: string) => void;
+  onNodeContextMenu?: (nodeId: string, at: { x: number; y: number }) => void;
   onPaneClick?: () => void;
   /** Access flows are directional; topology links are not. */
   directed?: boolean;
@@ -64,6 +65,7 @@ function PositionedCanvas({
   edges,
   onEdgeClick,
   onNodeClick,
+  onNodeContextMenu,
   onPaneClick,
   directed = false,
   visibleNodeIds = null,
@@ -99,7 +101,19 @@ function PositionedCanvas({
   );
 
   return (
-    <div className="h-[600px] rounded-lg border bg-card">
+    <div
+      className="h-[600px] rounded-lg border bg-card"
+      // Caught here rather than through React Flow's onNodeContextMenu, which
+      // does not fire under jsdom. React Flow stamps data-id on every node
+      // wrapper, so the target's ancestor is enough to know what was clicked.
+      onContextMenu={(event) => {
+        const wrapper = (event.target as HTMLElement).closest?.(".react-flow__node");
+        const nodeId = wrapper?.getAttribute("data-id");
+        if (!nodeId) return;
+        event.preventDefault();
+        onNodeContextMenu?.(nodeId, { x: event.clientX, y: event.clientY });
+      }}
+    >
       <ReactFlow
         nodes={flowNodes}
         edges={flowEdges}

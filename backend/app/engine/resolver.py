@@ -19,10 +19,31 @@ class AliasCycleError(Exception):
 
 
 class Resolver:
+    """Resolves an AddrSpec against one configuration.
+
+    The caches matter: evaluating a ruleset asks for the same handful of
+    interface subnets and aliases once per rule, and each miss re-parses a CIDR
+    string. On a three thousand rule config that was the single hottest path in
+    the whole engine.
+
+    A Resolver is built per request and the config never changes underneath it,
+    so caching for its lifetime is safe.
+    """
+
     def __init__(self, config: ParsedConfig) -> None:
         self.config = config
+        self._subnets: dict[tuple[str, int], IpSet] = {}
+        self._ips: dict[tuple[str, int], IpSet] = {}
+        self._selves: dict[int, IpSet] = {}
+        self._aliases: dict[tuple[str, int], tuple[IpSet, bool]] = {}
 
     def interface_subnet(self, name: str, family: int) -> IpSet:
+        key = (name, family)
+        if key not in self._subnets:
+            self._subnets[key] = self._compute_interface_subnet(name, family)
+        return self._subnets[key]
+
+    def _compute_interface_subnet(self, name: str, family: int) -> IpSet:
         iface = self.config.interface_by_name(name)
         if iface is None or not iface.ipaddr or iface.subnet is None:
             return IpSet.empty(family)
@@ -35,6 +56,12 @@ class Resolver:
         return IpSet.from_cidr(str(network))
 
     def interface_ip(self, name: str, family: int) -> IpSet:
+        key = (name, family)
+        if key not in self._ips:
+            self._ips[key] = self._compute_interface_ip(name, family)
+        return self._ips[key]
+
+    def _compute_interface_ip(self, name: str, family: int) -> IpSet:
         iface = self.config.interface_by_name(name)
         if iface is None or not iface.ipaddr:
             return IpSet.empty(family)
@@ -47,10 +74,12 @@ class Resolver:
         return IpSet.from_cidr(str(address))
 
     def self_addresses(self, family: int) -> IpSet:
-        found = IpSet.empty(family)
-        for iface in self.config.interfaces:
-            found = found.union(self.interface_ip(iface.name, family))
-        return found
+        if family not in self._selves:
+            found = IpSet.empty(family)
+            for iface in self.config.interfaces:
+                found = found.union(self.interface_ip(iface.name, family))
+            self._selves[family] = found
+        return self._selves[family]
 
     def addresses(self, spec: AddrSpec, family: int) -> tuple[IpSet, bool]:
         found, unresolved = self._raw_addresses(spec, family)
@@ -88,6 +117,9 @@ class Resolver:
         if alias is not None:
             if token in chain:
                 raise AliasCycleError([*chain, token])
+            key = (token, family)
+            if not chain and key in self._aliases:
+                return self._aliases[key]
             if alias.type in {"url", "urltable"}:
                 return IpSet.empty(family), True
             found = IpSet.empty(family)
@@ -96,6 +128,8 @@ class Resolver:
                 part, part_unresolved = self._token_to_addresses(member, family, [*chain, token])
                 found = found.union(part)
                 unresolved = unresolved or part_unresolved
+            if not chain:
+                self._aliases[key] = (found, unresolved)
             return found, unresolved
 
         try:

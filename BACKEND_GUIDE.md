@@ -2,6 +2,7 @@
 
 | Version | Date | Changes |
 |---|---|---|
+| 1.7.0 | 2026-08-10 | Cache resolver và explore_from: access-graph 1.34s → 0.13s trên 3000 rule |
 | 1.6.0 | 2026-08-10 | Workspace nhiều firewall, bảng định tuyến, tính đường đi xuyên firewall |
 | 1.5.0 | 2026-08-10 | Bỏ hẳn `unoccupied_grants` khỏi engine và API |
 | 1.4.0 | 2026-08-10 | Action `match` không quyết định verdict; nhận `source_hash_key`/`ipprotocol` của outbound NAT |
@@ -77,6 +78,31 @@ source, **trước** khi validator chạy, và mọi cách viết không phải 
 đó bằng `SettingsError`. Test phải đi qua biến môi trường thật
 (`monkeypatch.setenv`) — dựng `Settings(...)` bằng constructor đi đường khác và
 bỏ qua đúng tầng gây lỗi.
+
+## Hiệu năng
+
+Đo trên config tổng hợp 16 interface / 3000 rule / 60 alias (`/tmp/big.xml`
+sinh bằng script trong lịch sử commit):
+
+| Endpoint | Trước | Sau |
+|---|---|---|
+| `access-graph` | 1.34s | **0.13s** |
+| `risk` | 0.74s | 0.54s |
+| `topology` | 0.01s | 0.01s |
+
+Hai chỗ tốn, tìm ra bằng `cProfile` chứ không bằng phỏng đoán:
+
+1. **`Resolver` parse lại chuỗi CIDR cho từng rule.** `interface_subnet` bị gọi
+   96.000 lần trong một lần dựng access-graph. Giờ `Resolver` cache subnet, IP
+   interface, `(self)` và alias đã expand. Alias lồng nhau **không** cache khi
+   đang trong chuỗi đệ quy, nếu không phát hiện vòng lặp sẽ hỏng.
+2. **`access_graph` gọi `explore_from` cho từng cặp zone.** 17 zone → 256 lần
+   thay vì 16. `_Memo` cache theo `(firewall, source, protocol, in_interface)`;
+   với cùng một zone nguồn thì khoá giống nhau ở mọi đích.
+
+Bài học đáng nhớ: giả thuyết đầu tiên ("gọi lặp explore_from") **sai** — thêm
+cache mà không đo lại cho ra đúng 1.36s so với 1.34s. Chỗ thật sự tốn là parse
+CIDR trong resolver. Profile trước, sửa sau.
 
 ## Nhiều firewall
 

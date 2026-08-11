@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 
 import { FlowCanvas } from "@/components/graph/FlowCanvas";
@@ -15,6 +15,20 @@ export function AccessMapPage() {
   const [protocol, setProtocol] = useState("any");
   const [selectedEdge, setSelectedEdge] = useState<string | null>(null);
   const [focusedNode, setFocusedNode] = useState<string | null>(null);
+  // Hiding is separate from focusing: focus is "show me only this one", hide is
+  // "I never want to see this one". They compose.
+  const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set());
+  const [menu, setMenu] = useState<{ nodeId: string; x: number; y: number } | null>(null);
+
+  // A menu that can only be dismissed with the mouse traps keyboard users.
+  useEffect(() => {
+    if (!menu) return;
+    const close = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMenu(null);
+    };
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, [menu]);
 
   const query = useQuery({
     queryKey: ["access-graph", configId, protocol],
@@ -31,28 +45,38 @@ export function AccessMapPage() {
     () =>
       data.edges
         .map((edge, index) => ({ edge, id: edgeId(edge.source, edge.target, index) }))
+        .filter(({ edge }) => !hidden.has(edge.source) && !hidden.has(edge.target))
         .filter(
           ({ edge }) =>
             !focusedNode || edge.source === focusedNode || edge.target === focusedNode,
         ),
-    [data.edges, focusedNode],
+    [data.edges, focusedNode, hidden],
   );
 
   // A focused zone stays visible even with no flows, otherwise clicking a zone
   // that reaches nothing would make it vanish under the click.
   const visibleNodeIds = useMemo(() => {
-    if (!focusedNode) return null;
-    const ids = new Set<string>([focusedNode]);
-    for (const { edge } of shownEdges) {
-      ids.add(edge.source);
-      ids.add(edge.target);
+    if (!focusedNode && hidden.size === 0) return null;
+    const ids = new Set<string>();
+    if (focusedNode) {
+      ids.add(focusedNode);
+      for (const { edge } of shownEdges) {
+        ids.add(edge.source);
+        ids.add(edge.target);
+      }
+    } else {
+      for (const node of data.nodes) {
+        if (!hidden.has(node.id)) ids.add(node.id);
+      }
     }
+    for (const id of hidden) ids.delete(id);
     return ids;
-  }, [focusedNode, shownEdges]);
+  }, [focusedNode, shownEdges, hidden, data.nodes]);
 
   const visibleEdgeIds = useMemo(
-    () => (focusedNode ? new Set(shownEdges.map(({ id }) => id)) : null),
-    [focusedNode, shownEdges],
+    () =>
+      focusedNode || hidden.size > 0 ? new Set(shownEdges.map(({ id }) => id)) : null,
+    [focusedNode, shownEdges, hidden],
   );
 
   if (query.isError) {
@@ -84,6 +108,14 @@ export function AccessMapPage() {
   const clearFocus = () => {
     setFocusedNode(null);
     setSelectedEdge(null);
+    setMenu(null);
+  };
+
+  const hideZone = (nodeId: string) => {
+    setHidden((current) => new Set([...current, nodeId]));
+    setMenu(null);
+    setSelectedEdge(null);
+    if (focusedNode === nodeId) setFocusedNode(null);
   };
 
   return (
@@ -93,8 +125,8 @@ export function AccessMapPage() {
           <h1 className="text-xl font-semibold tracking-tight">Access map</h1>
           <p className="text-sm text-muted-foreground">
             An arrow means every firewall on the way allows at least some traffic. Drag zones to
-            untangle the graph. Click a zone to keep only its flows, click it again to bring the
-            rest back.
+            untangle the graph. Click a zone to keep only its flows; right-click one to hide it and
+            everything it touches.
           </p>
         </div>
         <label className="text-sm" htmlFor="protocol">
@@ -125,11 +157,44 @@ export function AccessMapPage() {
         </div>
       )}
 
+      {hidden.size > 0 && (
+        <div className="flex flex-wrap items-center gap-3 rounded-md border bg-card px-4 py-2 text-sm">
+          <span className="text-muted-foreground">
+            Hidden: {[...hidden].map(labelOf).join(", ")}
+          </span>
+          <Button type="button" variant="outline" size="sm" onClick={() => setHidden(new Set())}>
+            Show {hidden.size} hidden zone{hidden.size === 1 ? "" : "s"}
+          </Button>
+        </div>
+      )}
+
+      {menu && (
+        <>
+          {/* Clicking anywhere else dismisses the menu without hiding anything. */}
+          <div className="fixed inset-0 z-40" onClick={() => setMenu(null)} />
+          <div
+            role="menu"
+            className="fixed z-50 rounded-md border bg-card p-1 shadow-md"
+            style={{ left: menu.x, top: menu.y }}
+          >
+            <button
+              type="button"
+              role="menuitem"
+              className="w-full cursor-pointer rounded px-3 py-1.5 text-left text-sm hover:bg-muted"
+              onClick={() => hideZone(menu.nodeId)}
+            >
+              Hide {labelOf(menu.nodeId)} and its flows
+            </button>
+          </div>
+        </>
+      )}
+
       <FlowCanvas
         nodes={data.nodes}
         edges={canvasEdges}
         onEdgeClick={setSelectedEdge}
         onNodeClick={toggleFocus}
+        onNodeContextMenu={(nodeId, at) => setMenu({ nodeId, x: at.x, y: at.y })}
         onPaneClick={clearFocus}
         visibleNodeIds={visibleNodeIds}
         visibleEdgeIds={visibleEdgeIds}

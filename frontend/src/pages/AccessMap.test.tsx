@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -147,6 +147,76 @@ describe("AccessMapPage", () => {
       expect(zoneNode("LAN")).toBeInTheDocument();
       expect(screen.queryByText("DMZ → Internet")).not.toBeInTheDocument();
       expect(screen.getByText(/no flows touch/i)).toBeInTheDocument();
+    });
+  });
+
+  describe("hiding a zone", () => {
+    const threeZones = {
+      nodes: [
+        { id: "lan", label: "LAN", kind: "interface" as const, subnet: "192.168.1.0/24" },
+        { id: "dmz", label: "DMZ", kind: "interface" as const, subnet: "10.10.20.0/24" },
+        { id: "internet", label: "Internet", kind: "internet" as const, subnet: null },
+      ],
+      edges: [
+        { source: "lan", target: "internet", ports: "443", rules: [] },
+        { source: "dmz", target: "internet", ports: "80", rules: [] },
+      ],
+    };
+
+    function zoneNode(label: string) {
+      const match = screen
+        .getAllByText(label)
+        .find((element) => element.closest(".react-flow__node"));
+      if (!match) throw new Error(`no canvas node labelled ${label}`);
+      return match;
+    }
+
+    async function openMenuOn(label: string) {
+      vi.spyOn(api, "getAccessGraph").mockResolvedValue(threeZones);
+      renderPage();
+      await screen.findByText("LAN → Internet");
+      fireEvent.contextMenu(zoneNode(label));
+    }
+
+    it("offers a hide action on right click", async () => {
+      await openMenuOn("DMZ");
+      expect(await screen.findByRole("menuitem", { name: /hide dmz/i })).toBeInTheDocument();
+    });
+
+    it("drops the flows that touch the hidden zone", async () => {
+      await openMenuOn("DMZ");
+      await userEvent.click(await screen.findByRole("menuitem", { name: /hide dmz/i }));
+      expect(screen.queryByText("DMZ → Internet")).not.toBeInTheDocument();
+      expect(screen.getByText("LAN → Internet")).toBeInTheDocument();
+    });
+
+    it("takes the zone itself off the canvas", async () => {
+      await openMenuOn("DMZ");
+      await userEvent.click(await screen.findByRole("menuitem", { name: /hide dmz/i }));
+      expect(screen.queryByText("DMZ")).not.toBeInTheDocument();
+    });
+
+    it("says how many zones are hidden and offers them back", async () => {
+      await openMenuOn("DMZ");
+      await userEvent.click(await screen.findByRole("menuitem", { name: /hide dmz/i }));
+      const restore = await screen.findByRole("button", { name: /show 1 hidden zone/i });
+      await userEvent.click(restore);
+      expect(await screen.findByText("DMZ → Internet")).toBeInTheDocument();
+    });
+
+    it("closes on Escape without hiding anything", async () => {
+      await openMenuOn("DMZ");
+      await screen.findByRole("menuitem", { name: /hide dmz/i });
+      fireEvent.keyDown(window, { key: "Escape" });
+      expect(screen.queryByRole("menuitem", { name: /hide dmz/i })).not.toBeInTheDocument();
+      expect(screen.getByText("DMZ → Internet")).toBeInTheDocument();
+    });
+
+    it("closes when the backdrop is clicked", async () => {
+      await openMenuOn("DMZ");
+      await screen.findByRole("menuitem", { name: /hide dmz/i });
+      fireEvent.click(document.querySelector(".fixed.inset-0")!);
+      expect(screen.queryByRole("menuitem", { name: /hide dmz/i })).not.toBeInTheDocument();
     });
   });
 

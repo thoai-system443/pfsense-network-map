@@ -226,12 +226,39 @@ def path_check(
     return result
 
 
+class _Memo:
+    """Per-request cache for the two expensive calls.
+
+    Without it access_graph rebuilds a routing table and re-runs explore_from
+    for every ordered pair of zones, which is O(zones squared) evaluations of
+    the same handful of rulesets.
+    """
+
+    def __init__(self) -> None:
+        self.tables: dict[str, list] = {}
+        self.explored: dict[tuple[str, str, str, str], list] = {}
+
+    def table(self, firewall: Firewall):
+        if firewall.id not in self.tables:
+            self.tables[firewall.id] = routing.build_table(firewall.config)
+        return self.tables[firewall.id]
+
+    def explore(self, firewall: Firewall, source: str, protocol: str, in_interface: str):
+        key = (firewall.id, source, protocol, in_interface)
+        if key not in self.explored:
+            self.explored[key] = explore_from(
+                firewall.config, source, protocol, in_interface=in_interface
+            )
+        return self.explored[key]
+
+
 def reachable_ports(
     firewalls: list[Firewall],
     source: str,
     destination_set: IpSet,
     destination_probe: str,
     protocol: str = "any",
+    memo: "_Memo | None" = None,
 ) -> tuple[PortSet, bool]:
     """Ports open from source into a destination set, across the whole chain.
 
@@ -239,6 +266,7 @@ def reachable_ports(
     the answer is their intersection, because every hop has to agree. Returns
     the ports and whether the chain was cut short.
     """
+    memo = memo or _Memo()
     entry = _entry_point(firewalls, source)
     if entry is None:
         return PortSet.empty(), False
@@ -253,7 +281,7 @@ def reachable_ports(
         seen.add((firewall.id, in_interface))
 
         hop_ports = PortSet.empty()
-        for region in explore_from(firewall.config, source, protocol, in_interface=in_interface):
+        for region in memo.explore(firewall, source, protocol, in_interface):
             if region.verdict != "pass":
                 continue
             covered = IpSet.empty(FAMILY)
@@ -267,7 +295,7 @@ def reachable_ports(
         if allowed.is_empty():
             return allowed, False
 
-        route = routing.lookup(routing.build_table(firewall.config), destination_probe)
+        route = routing.lookup(memo.table(firewall), destination_probe)
         if route is None or route.next_hop is None:
             return allowed, False
 
@@ -385,6 +413,9 @@ def access_graph(firewalls: list[Firewall], protocol: str = "any") -> dict:
         for zone_id, label, addresses, _ in entries
     ]
 
+    # One cache for the whole graph: every pair re-asks the same firewalls the
+    # same questions.
+    memo = _Memo()
     edges: list[dict] = []
     for source_id, _, _, probe in entries:
         if probe is None:
@@ -392,7 +423,9 @@ def access_graph(firewalls: list[Firewall], protocol: str = "any") -> dict:
         for target_id, _, target_set, target_probe in entries:
             if target_id == source_id or target_probe is None:
                 continue
-            ports, truncated = reachable_ports(firewalls, probe, target_set, target_probe, protocol)
+            ports, truncated = reachable_ports(
+                firewalls, probe, target_set, target_probe, protocol, memo=memo
+            )
             if ports.is_empty():
                 continue
             edges.append(
