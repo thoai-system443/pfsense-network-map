@@ -92,8 +92,9 @@ export function AccessMapPage() {
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Access map</h1>
           <p className="text-sm text-muted-foreground">
-            An arrow means at least some traffic is allowed. Drag zones to untangle the graph. Click
-            a zone to keep only its flows, click it again to bring the rest back.
+            An arrow means every firewall on the way allows at least some traffic. Drag zones to
+            untangle the graph. Click a zone to keep only its flows, click it again to bring the
+            rest back.
           </p>
         </div>
         <label className="text-sm" htmlFor="protocol">
@@ -168,6 +169,9 @@ export function AccessMapPage() {
                     {labelOf(edge.source)} → {labelOf(edge.target)}
                   </span>
                   <span className="tabular text-muted-foreground">{edge.ports}</span>
+                  {edge.truncated && (
+                    <span className="text-accent">chain left the loaded firewalls</span>
+                  )}
                 </button>
               </li>
             ))}

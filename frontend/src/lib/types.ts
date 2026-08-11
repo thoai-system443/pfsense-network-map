@@ -12,16 +12,30 @@ export interface ParseWarning {
   severity: "info" | "warning" | "error";
 }
 
+export interface FirewallMeta {
+  id: string;
+  name: string;
+  filename: string;
+  version: string | null;
+}
+
+/** Warnings carry the firewall that raised them once a workspace holds several. */
+export interface TaggedWarning extends ParseWarning {
+  firewall: string;
+}
+
 export interface ConfigMeta {
   config_id: string;
   filename: string;
   version: string | null;
   hostname: string;
+  firewalls: FirewallMeta[];
   counts: Record<string, number>;
-  warnings: ParseWarning[];
+  warnings: TaggedWarning[];
 }
 
 export interface Interface {
+  firewall: string;
   name: string;
   descr: string;
   if_: string;
@@ -34,6 +48,7 @@ export interface Interface {
 }
 
 export interface Alias {
+  firewall: string;
   name: string;
   type: string;
   items: string[];
@@ -52,6 +67,7 @@ export interface AddrSpec {
 }
 
 export interface FilterRule {
+  firewall: string;
   seq: number;
   interfaces: string[];
   floating: boolean;
@@ -95,6 +111,7 @@ export interface OutboundRule {
 }
 
 export interface NatConfig {
+  firewall: string;
   port_forwards: PortForward[];
   one_to_one: OneToOne[];
   outbound: OutboundRule[];
@@ -116,6 +133,9 @@ export interface GraphNode {
   label: string;
   kind: "firewall" | "interface" | "vlan" | "tunnel" | "internet";
   subnet: string | null;
+  /** True when more than one firewall sits on this network. */
+  shared?: boolean;
+  firewalls?: string[];
 }
 
 export interface TopologyEdge {
@@ -129,6 +149,27 @@ export interface AccessEdge {
   target: string;
   ports: string;
   rules: RuleRef[];
+  /** The chain left the loaded firewalls before this flow could be settled. */
+  truncated?: boolean;
+}
+
+export interface Hop {
+  firewall_id: string;
+  firewall_name: string;
+  in_interface: string;
+  verdict: Verdict;
+  decided_by: RuleRef | null;
+  out_interface: string | null;
+  next_hop: string | null;
+  translated_address: string | null;
+  translated_port: number | null;
+}
+
+export interface PathResult {
+  verdict: Verdict | "unrouted";
+  truncated: boolean;
+  stopped_reason: string | null;
+  hops: Hop[];
 }
 
 export interface TraceEntry {
@@ -169,6 +210,7 @@ export interface RiskSubject {
 }
 
 export interface Exposure {
+  firewall: string;
   subject: RiskSubject;
   reaches_other_subnets_any_port: string[];
   reaches_internet: boolean;
@@ -180,6 +222,7 @@ export interface Exposure {
 }
 
 export interface PortAccess {
+  firewall: string;
   source_id: string;
   source_label: string;
   destination_cidrs: string[];
@@ -188,6 +231,7 @@ export interface PortAccess {
 }
 
 export interface DenyAllFinding {
+  firewall: string;
   kind: "block-all-not-quick" | "unreachable-rule";
   interface: string;
   rule: RuleRef;

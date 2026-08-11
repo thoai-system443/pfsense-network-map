@@ -89,11 +89,14 @@ export function InventoryPage() {
       </div>
 
       {tab === "interfaces" && (
-        <Table headers={["Name", "Device", "Address", "VLAN", "Enabled"]}>
+        <Table headers={["Firewall", "Name", "Device", "Address", "VLAN", "Enabled"]}>
           {(interfaces.data ?? [])
-            .filter((row) => matches(filter, [row.name, row.descr, row.ipaddr, row.if_]))
+            .filter((row) =>
+              matches(filter, [row.name, row.descr, row.ipaddr, row.if_, row.firewall]),
+            )
             .map((row) => (
-              <tr key={row.name}>
+              <tr key={`${row.firewall}-${row.name}`}>
+                <td className="px-4 py-2 text-muted-foreground">{row.firewall}</td>
                 <td className="px-4 py-2 font-medium">{row.descr}</td>
                 <td className="tabular px-4 py-2">{row.if_}</td>
                 <td className="tabular px-4 py-2">
@@ -118,11 +121,12 @@ export function InventoryPage() {
       )}
 
       {tab === "aliases" && (
-        <Table headers={["Name", "Type", "Members", "Resolved"]}>
+        <Table headers={["Firewall", "Name", "Type", "Members", "Resolved"]}>
           {(aliases.data ?? [])
-            .filter((row) => matches(filter, [row.name, row.descr, ...row.items]))
+            .filter((row) => matches(filter, [row.name, row.descr, row.firewall, ...row.items]))
             .map((row) => (
-              <tr key={row.name} className="align-top">
+              <tr key={`${row.firewall}-${row.name}`} className="align-top">
+                <td className="px-4 py-2 text-muted-foreground">{row.firewall}</td>
                 <td className="px-4 py-2">
                   <Link
                     className="cursor-pointer text-primary underline underline-offset-2"
@@ -146,11 +150,14 @@ export function InventoryPage() {
       )}
 
       {tab === "rules" && (
-        <Table headers={["#", "Interface", "Action", "Protocol", "Description", "Flags"]}>
+        <Table headers={["Firewall", "#", "Interface", "Action", "Protocol", "Description", "Flags"]}>
           {(rules.data ?? [])
-            .filter((row) => matches(filter, [row.descr, row.protocol, ...row.interfaces]))
-            .map((row) => (
-              <tr key={row.seq} className={row.disabled ? "opacity-50" : ""}>
+            .filter((row) =>
+              matches(filter, [row.descr, row.protocol, row.firewall, ...row.interfaces]),
+            )
+            .map((row, index) => (
+              <tr key={`${row.firewall}-${index}`} className={row.disabled ? "opacity-50" : ""}>
+                <td className="px-4 py-2 text-muted-foreground">{row.firewall}</td>
                 <td className="tabular px-4 py-2">{row.seq}</td>
                 <td className="tabular px-4 py-2">{row.interfaces.join(", ")}</td>
                 <td className="px-4 py-2">{row.action}</td>
@@ -166,53 +173,55 @@ export function InventoryPage() {
         </Table>
       )}
 
-      {tab === "nat" && nat.data && (
-        <div className="space-y-6">
-          <section className="space-y-2">
-            <h2 className="font-medium">Port forwards</h2>
-            <Table headers={["Interface", "Protocol", "Target", "Local port", "Description"]}>
-              {nat.data.port_forwards
-                .filter((row) => matches(filter, [row.descr, row.target, row.local_port]))
-                .map((row, index) => (
-                  <tr key={index}>
-                    <td className="tabular px-4 py-2">{row.interface}</td>
-                    <td className="px-4 py-2">{row.protocol}</td>
-                    <td className="tabular px-4 py-2">
-                      <Link
-                        className="cursor-pointer text-primary underline underline-offset-2"
-                        to={searchLink(row.target)}
-                      >
-                        {row.target}
-                      </Link>
-                    </td>
-                    <td className="tabular px-4 py-2">{row.local_port ?? "—"}</td>
-                    <td className="px-4 py-2">{row.descr}</td>
-                  </tr>
-                ))}
-            </Table>
-          </section>
+      {tab === "nat" &&
+        (nat.data ?? []).map((entry) => (
+          <div key={entry.firewall} className="space-y-6">
+            <h2 className="font-medium">{entry.firewall}</h2>
+            <section className="space-y-2">
+              <h3 className="text-sm text-muted-foreground">Port forwards</h3>
+              <Table headers={["Interface", "Protocol", "Target", "Local port", "Description"]}>
+                {entry.port_forwards
+                  .filter((row) => matches(filter, [row.descr, row.target, row.local_port]))
+                  .map((row, index) => (
+                    <tr key={index}>
+                      <td className="tabular px-4 py-2">{row.interface}</td>
+                      <td className="px-4 py-2">{row.protocol}</td>
+                      <td className="tabular px-4 py-2">
+                        <Link
+                          className="cursor-pointer text-primary underline underline-offset-2"
+                          to={searchLink(row.target)}
+                        >
+                          {row.target}
+                        </Link>
+                      </td>
+                      <td className="tabular px-4 py-2">{row.local_port ?? "—"}</td>
+                      <td className="px-4 py-2">{row.descr}</td>
+                    </tr>
+                  ))}
+              </Table>
+            </section>
 
-          <section className="space-y-2">
-            <h2 className="font-medium">Outbound NAT</h2>
-            <p className="text-sm text-muted-foreground">
-              Shown for reference only. Outbound NAT runs after the filter decision, so it never
-              changes whether traffic is allowed.
-            </p>
-            <Table headers={["Interface", "Source", "Destination", "Target"]}>
-              {nat.data.outbound
-                .filter((row) => matches(filter, [row.source, row.destination, row.descr]))
-                .map((row, index) => (
-                  <tr key={index}>
-                    <td className="tabular px-4 py-2">{row.interface}</td>
-                    <td className="tabular px-4 py-2">{row.source}</td>
-                    <td className="tabular px-4 py-2">{row.destination}</td>
-                    <td className="px-4 py-2">{row.target}</td>
-                  </tr>
-                ))}
-            </Table>
-          </section>
-        </div>
-      )}
+            <section className="space-y-2">
+              <h3 className="text-sm text-muted-foreground">Outbound NAT</h3>
+              <p className="text-sm text-muted-foreground">
+                Shown for reference only. Outbound NAT runs after the filter decision, so it never
+                changes whether traffic is allowed.
+              </p>
+              <Table headers={["Interface", "Source", "Destination", "Target"]}>
+                {entry.outbound
+                  .filter((row) => matches(filter, [row.source, row.destination, row.descr]))
+                  .map((row, index) => (
+                    <tr key={index}>
+                      <td className="tabular px-4 py-2">{row.interface}</td>
+                      <td className="tabular px-4 py-2">{row.source}</td>
+                      <td className="tabular px-4 py-2">{row.destination}</td>
+                      <td className="px-4 py-2">{row.target}</td>
+                    </tr>
+                  ))}
+              </Table>
+            </section>
+          </div>
+        ))}
     </div>
   );
 }

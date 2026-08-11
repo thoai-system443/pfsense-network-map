@@ -36,6 +36,7 @@ const rule = {
 const report: RiskReport = {
   exposures: [
     {
+      firewall: "fw-edge",
       subject: { id: "lan", label: "LAN", kind: "interface", cidrs: ["192.168.1.0/24"] },
       reaches_other_subnets_any_port: ["DMZ"],
       reaches_internet: true,
@@ -46,6 +47,7 @@ const report: RiskReport = {
       inbound_internet_ports: "",
     },
     {
+      firewall: "fw-edge",
       subject: { id: "alias:DB_SERVER", label: "DB_SERVER", kind: "alias", cidrs: ["10.10.20.50/32"] },
       reaches_other_subnets_any_port: [],
       reaches_internet: false,
@@ -56,6 +58,7 @@ const report: RiskReport = {
       inbound_internet_ports: "8443",
     },
     {
+      firewall: "fw-edge",
       subject: { id: "opt2", label: "GUEST", kind: "interface", cidrs: ["172.16.5.0/24"] },
       reaches_other_subnets_any_port: [],
       reaches_internet: false,
@@ -68,6 +71,7 @@ const report: RiskReport = {
   ],
   deny_all: [
     {
+      firewall: "fw-edge",
       kind: "block-all-not-quick",
       interface: "opt1",
       rule: { ...rule, descr: "Block everything on DMZ", action: "block" },
@@ -138,6 +142,7 @@ describe("RiskPage", () => {
     vi.spyOn(api, "getRiskReport").mockResolvedValue(report);
     const spy = vi.spyOn(api, "getPortAccess").mockResolvedValue([
       {
+        firewall: "fw-edge",
         source_id: "opt1",
         source_label: "DMZ",
         destination_cidrs: ["10.10.20.50/32"],

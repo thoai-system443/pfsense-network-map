@@ -23,6 +23,7 @@ function renderPage() {
 
 const interfaces = [
   {
+    firewall: "fw-edge",
     name: "lan",
     descr: "LAN",
     if_: "em1",
@@ -34,6 +35,7 @@ const interfaces = [
     parent_if: null,
   },
   {
+    firewall: "fw-edge",
     name: "opt1",
     descr: "DMZ",
     if_: "em2.20",
@@ -77,6 +79,7 @@ describe("InventoryPage", () => {
     vi.spyOn(api, "getInterfaces").mockResolvedValue(interfaces);
     vi.spyOn(api, "getAliases").mockResolvedValue([
       {
+        firewall: "fw-edge",
         name: "WEB_SERVERS",
         type: "host",
         items: ["192.168.1.10"],
@@ -93,6 +96,7 @@ describe("InventoryPage", () => {
     vi.spyOn(api, "getInterfaces").mockResolvedValue(interfaces);
     vi.spyOn(api, "getAliases").mockResolvedValue([
       {
+        firewall: "fw-edge",
         name: "LOOP_A",
         type: "host",
         items: ["LOOP_B"],

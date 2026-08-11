@@ -2,6 +2,7 @@
 
 | Version | Date | Changes |
 |---|---|---|
+| 1.4.0 | 2026-08-10 | Nạp nhiều firewall, tab Across firewalls, cột Firewall trong Inventory/Risk |
 | 1.3.0 | 2026-08-10 | Risk: chỉ liệt kê object có rủi ro; bỏ mục địa chỉ trống ở cả frontend lẫn backend |
 | 1.2.0 | 2026-08-10 | Thêm trang Risk: 4 tiêu chí phơi nhiễm, tra theo port, địa chỉ trống, deny-all |
 | 1.1.0 | 2026-08-10 | Access map: kéo node tự do, click node để lọc luồng liên quan |
@@ -92,6 +93,19 @@ Bảng chỉ liệt kê object khớp ít nhất một trong bốn tiêu chí. P
 object đã kiểm ("3 of 5") — một bảng ngắn không có tổng đọc như thể phân tích
 tìm được ít, trong khi thực ra phần lớn object sạch.
 
+
+## Nhiều firewall
+
+Trang Upload **không tự chuyển trang** sau khi nạp xong — đó là chỗ duy nhất
+nạp được firewall thứ hai, tự nhảy đi sẽ khiến không ai tìm thấy tính năng.
+Bấm "Open the map" để đi tiếp.
+
+Nhãn của ô chọn file giữ chữ "config.xml" ở **cả hai** trạng thái. Đổi hẳn sang
+"Add another firewall" làm mất manh mối duy nhất mà screen reader có về loại
+file cần chọn.
+
+Tab đầu của Search là "Across firewalls" (đi hết chuỗi). Ba tab còn lại vẫn tính
+trên **một** firewall — hữu ích khi muốn soi riêng một bộ rule.
 
 ## Gotchas
 

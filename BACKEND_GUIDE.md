@@ -2,6 +2,7 @@
 
 | Version | Date | Changes |
 |---|---|---|
+| 1.6.0 | 2026-08-10 | Workspace nhiều firewall, bảng định tuyến, tính đường đi xuyên firewall |
 | 1.5.0 | 2026-08-10 | Bỏ hẳn `unoccupied_grants` khỏi engine và API |
 | 1.4.0 | 2026-08-10 | Action `match` không quyết định verdict; nhận `source_hash_key`/`ipprotocol` của outbound NAT |
 | 1.3.0 | 2026-08-10 | Thêm `engine/risk.py`: 4 tiêu chí phơi nhiễm, tra theo port, khoảng địa chỉ trống, kiểm tra deny-all |
@@ -76,6 +77,32 @@ source, **trước** khi validator chạy, và mọi cách viết không phải 
 đó bằng `SettingsError`. Test phải đi qua biến môi trường thật
 (`monkeypatch.setenv`) — dựng `Settings(...)` bằng constructor đi đường khác và
 bỏ qua đúng tầng gây lỗi.
+
+## Nhiều firewall
+
+Một `config_id` là một **workspace** chứa nhiều firewall, không phải một file.
+`POST /configs/{id}/firewalls` nạp thêm; file được parse xong mới gắn vào, nên
+upload hỏng không làm hỏng workspace.
+
+`app/engine/fabric.py` lo phần nhiều firewall. Chuỗi suy ra từ **next-hop của
+bảng route**: firewall nào sở hữu địa chỉ đó là chặng kế tiếp. Verdict `pass`
+chỉ khi mọi chặng cho qua; chặng đầu tiên từ chối là chặng được báo.
+
+Ba điểm phải giữ đúng:
+
+- **`_owner_of` quét khớp-chính-xác trên toàn bộ firewall trước** rồi mới tới
+  khớp-subnet. Làm cả hai lần lượt trong từng firewall sẽ khiến chính firewall
+  đang rời đi nhận lấy subnet transit của nó và chuỗi đứt ngay chặng đầu, vì
+  next-hop luôn nằm trong đoạn mạng hai bên dùng chung.
+- **Next-hop thuộc thiết bị không được nạp thì chuỗi dừng và `truncated=True`.**
+  Kết luận "thông" cho cả đường khi chưa kiểm là điều công cụ này không có bằng
+  chứng để nói.
+- **`shared` là thuộc tính riêng, không phải một giá trị của `kind`.** `kind`
+  nói segment là gì (interface/vlan/tunnel), `shared` nói mấy firewall chạm vào.
+  Gộp hai thứ vào một trường làm mất cờ VLAN.
+
+`/risk` chạy **từng firewall một** và gắn nhãn, vì bốn tiêu chí phơi nhiễm hỏi
+về một bộ rule cụ thể. Khả năng tới được xuyên firewall là việc của `query/path`.
 
 ## Ngữ nghĩa đánh giá rule
 

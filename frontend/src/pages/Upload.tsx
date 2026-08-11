@@ -1,21 +1,26 @@
 import { useMutation } from "@tanstack/react-query";
+import { useState } from "react";
 import { AlertTriangle, FileUp } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
-import { uploadConfig } from "@/lib/api";
+import { addFirewall, uploadConfig } from "@/lib/api";
 import type { ConfigMeta } from "@/lib/types";
 
 export function UploadPage() {
   const navigate = useNavigate();
+  const [loaded, setLoaded] = useState<ConfigMeta | null>(null);
+
   const mutation = useMutation<ConfigMeta, Error, File>({
-    mutationFn: uploadConfig,
+    // A second file joins the workspace the first one created, so a chain of
+    // firewalls can be evaluated together.
+    mutationFn: (file) => (loaded ? addFirewall(loaded.config_id, file) : uploadConfig(file)),
     onSuccess: (meta) => {
+      setLoaded(meta);
       // Warnings mean the parser met something it did not recognise, so the
       // results may be incomplete. Stop and make the user look before moving on.
-      if (meta.warnings.length === 0) {
-        navigate(`/c/${meta.config_id}/topology`);
-      }
+      // Deliberately no automatic navigation: the point of this screen is that
+      // more than one firewall can be loaded before looking at anything.
     },
   });
 
@@ -28,12 +33,31 @@ export function UploadPage() {
         </p>
       </section>
 
+      {loaded && (
+        <ul className="rounded-md border bg-card text-sm">
+          {loaded.firewalls.map((firewall) => (
+            <li key={firewall.id} className="border-b px-4 py-2 last:border-b-0">
+              <span className="font-medium">{firewall.name}</span>{" "}
+              <span className="text-muted-foreground">
+                — {firewall.filename}, pfSense {firewall.version ?? "unknown"}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+
       <label
         htmlFor="config-file"
         className="flex h-44 cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-input bg-card text-sm transition-colors duration-150 hover:border-primary hover:bg-muted"
       >
         <FileUp className="size-6 text-muted-foreground" aria-hidden="true" />
-        <span className="font-medium">Choose a config.xml backup</span>
+        <span className="font-medium">
+          {/* "config.xml" stays in both labels: it is the only cue a screen
+              reader gets about what kind of file this control wants. */}
+          {loaded
+            ? "Add another firewall: choose its config.xml"
+            : "Choose a config.xml backup"}
+        </span>
         <span className="text-muted-foreground">or drop it here</span>
         <input
           id="config-file"
@@ -75,6 +99,10 @@ export function UploadPage() {
             ))}
           </dl>
 
+          <Button type="button" onClick={() => navigate(`/c/${mutation.data.config_id}/topology`)}>
+            Open the map
+          </Button>
+
           {mutation.data.warnings.length > 0 && (
             <div className="space-y-3 rounded-md border border-accent bg-card p-4">
               <div className="flex items-center gap-2">
@@ -90,15 +118,13 @@ export function UploadPage() {
               <ul className="max-h-64 space-y-1 overflow-auto text-sm">
                 {mutation.data.warnings.map((warning, index) => (
                   <li key={`${warning.path}-${index}`}>
+                    <span className="text-muted-foreground">{warning.firewall}: </span>
                     <code className="text-xs">{warning.path}</code>{" "}
                     <span className="text-muted-foreground">— {warning.message}</span>
                   </li>
                 ))}
               </ul>
-              <Button
-                type="button"
-                onClick={() => navigate(`/c/${mutation.data.config_id}/topology`)}
-              >
+              <Button type="button" onClick={() => navigate(`/c/${mutation.data.config_id}/topology`)}>
                 Continue anyway
               </Button>
             </div>

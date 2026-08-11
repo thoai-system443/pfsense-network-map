@@ -35,6 +35,60 @@ const rule = {
 afterEach(() => vi.restoreAllMocks());
 
 describe("SearchPage", () => {
+  it("opens on the cross-firewall walk and reports every hop", async () => {
+    vi.spyOn(api, "queryPath").mockResolvedValue({
+      verdict: "block",
+      truncated: false,
+      stopped_reason: null,
+      hops: [
+        {
+          firewall_id: "fw-0",
+          firewall_name: "fw-edge",
+          in_interface: "lan",
+          verdict: "pass",
+          decided_by: rule,
+          out_interface: "opt1",
+          next_hop: "10.10.20.2",
+          translated_address: null,
+          translated_port: null,
+        },
+        {
+          firewall_id: "fw-1",
+          firewall_name: "fw-core",
+          in_interface: "wan",
+          verdict: "block",
+          decided_by: null,
+          out_interface: "lan",
+          next_hop: null,
+          translated_address: null,
+          translated_port: null,
+        },
+      ],
+    });
+    renderPage();
+    await userEvent.type(screen.getByLabelText(/^source$/i), "192.168.1.50");
+    await userEvent.type(screen.getByLabelText(/^destination$/i), "10.20.5.10");
+    await userEvent.click(screen.getByRole("button", { name: /^check$/i }));
+
+    expect(await screen.findByText("fw-edge")).toBeInTheDocument();
+    expect(screen.getByText("fw-core")).toBeInTheDocument();
+  });
+
+  it("says when the walk left the loaded firewalls", async () => {
+    vi.spyOn(api, "queryPath").mockResolvedValue({
+      verdict: "pass",
+      truncated: true,
+      stopped_reason: "next hop 203.0.113.1 belongs to a device that is not loaded here",
+      hops: [],
+    });
+    renderPage();
+    await userEvent.type(screen.getByLabelText(/^source$/i), "192.168.1.50");
+    await userEvent.type(screen.getByLabelText(/^destination$/i), "8.8.8.8");
+    await userEvent.click(screen.getByRole("button", { name: /^check$/i }));
+
+    expect(await screen.findByText(/not loaded here/i)).toBeInTheDocument();
+  });
+
   it("shows the verdict and the deciding rule for a path check", async () => {
     vi.spyOn(api, "queryCheck").mockResolvedValue({
       verdict: "pass",
@@ -46,6 +100,7 @@ describe("SearchPage", () => {
       trace: [],
     });
     renderPage();
+    await userEvent.click(screen.getByRole("tab", { name: /path check/i }));
     await userEvent.type(screen.getByLabelText(/^source$/i), "192.168.1.50");
     await userEvent.type(screen.getByLabelText(/^destination$/i), "8.8.8.8");
     await userEvent.type(screen.getByLabelText(/^port$/i), "443");
@@ -66,6 +121,7 @@ describe("SearchPage", () => {
       trace: [],
     });
     renderPage();
+    await userEvent.click(screen.getByRole("tab", { name: /path check/i }));
     await userEvent.type(screen.getByLabelText(/^source$/i), "8.8.8.8");
     await userEvent.type(screen.getByLabelText(/^destination$/i), "203.0.113.2");
     await userEvent.click(screen.getByRole("button", { name: /^check$/i }));
@@ -110,6 +166,7 @@ describe("SearchPage", () => {
       trace: [],
     });
     renderPage();
+    await userEvent.click(screen.getByRole("tab", { name: /path check/i }));
     await userEvent.type(screen.getByLabelText(/^source$/i), "192.168.1.50");
     await userEvent.type(screen.getByLabelText(/^destination$/i), "8.8.8.8");
     await userEvent.click(screen.getByRole("button", { name: /^check$/i }));
@@ -120,6 +177,7 @@ describe("SearchPage", () => {
   it("shows the server error instead of a blank result", async () => {
     vi.spyOn(api, "queryCheck").mockRejectedValue(new Error("cannot resolve 'nope'"));
     renderPage();
+    await userEvent.click(screen.getByRole("tab", { name: /path check/i }));
     await userEvent.type(screen.getByLabelText(/^source$/i), "nope");
     await userEvent.type(screen.getByLabelText(/^destination$/i), "8.8.8.8");
     await userEvent.click(screen.getByRole("button", { name: /^check$/i }));

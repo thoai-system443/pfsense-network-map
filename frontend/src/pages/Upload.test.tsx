@@ -30,6 +30,9 @@ const meta = {
   filename: "config.xml",
   version: "22.5",
   hostname: "fw1",
+  firewalls: [
+    { id: "fw-0", name: "fw1", filename: "config.xml", version: "22.5" },
+  ],
   counts: { interfaces: 2, aliases: 1, rules: 2 },
   warnings: [],
 };
@@ -52,18 +55,56 @@ describe("UploadPage", () => {
     expect(screen.getByLabelText(/config\.xml/i)).toBeInTheDocument();
   });
 
-  it("navigates to the topology view after a clean upload", async () => {
+  it("stays put after a clean upload so another firewall can be added", async () => {
     vi.spyOn(api, "uploadConfig").mockResolvedValue(meta);
     renderPage();
     await chooseFile();
-    await waitFor(() => expect(navigate).toHaveBeenCalledWith("/c/abc123/topology"));
+    await screen.findByRole("button", { name: /open the map/i });
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("lists the firewalls loaded so far", async () => {
+    vi.spyOn(api, "uploadConfig").mockResolvedValue(meta);
+    renderPage();
+    await chooseFile();
+    expect(await screen.findByText("fw1")).toBeInTheDocument();
+  });
+
+  it("invites a second firewall once one is loaded", async () => {
+    vi.spyOn(api, "uploadConfig").mockResolvedValue(meta);
+    renderPage();
+    await chooseFile();
+    expect(await screen.findByText(/add another firewall/i)).toBeInTheDocument();
+  });
+
+  it("sends the second file to the workspace the first one created", async () => {
+    vi.spyOn(api, "uploadConfig").mockResolvedValue(meta);
+    const spy = vi.spyOn(api, "addFirewall").mockResolvedValue(meta);
+    renderPage();
+    await chooseFile();
+    await screen.findByRole("button", { name: /open the map/i });
+    await chooseFile();
+    await waitFor(() => expect(spy).toHaveBeenCalledWith("abc123", expect.any(File)));
+  });
+
+  it("opens the map on request", async () => {
+    vi.spyOn(api, "uploadConfig").mockResolvedValue(meta);
+    renderPage();
+    await chooseFile();
+    await userEvent.click(await screen.findByRole("button", { name: /open the map/i }));
+    expect(navigate).toHaveBeenCalledWith("/c/abc123/topology");
   });
 
   it("shows the parse warnings so schema gaps are visible", async () => {
     vi.spyOn(api, "uploadConfig").mockResolvedValue({
       ...meta,
       warnings: [
-        { path: "pfsense/mystery", message: "unrecognised element, ignored", severity: "warning" },
+        {
+          firewall: "fw1",
+          path: "pfsense/mystery",
+          message: "unrecognised element, ignored",
+          severity: "warning" as const,
+        },
       ],
     });
     renderPage();
@@ -75,7 +116,12 @@ describe("UploadPage", () => {
     vi.spyOn(api, "uploadConfig").mockResolvedValue({
       ...meta,
       warnings: [
-        { path: "pfsense/mystery", message: "unrecognised element, ignored", severity: "warning" },
+        {
+          firewall: "fw1",
+          path: "pfsense/mystery",
+          message: "unrecognised element, ignored",
+          severity: "warning" as const,
+        },
       ],
     });
     renderPage();

@@ -3,32 +3,43 @@ import { useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
-import { queryCheck, queryFrom, queryTo } from "@/lib/api";
-import type { CheckResult, Region, SourceRegion, Verdict } from "@/lib/types";
+import { queryCheck, queryFrom, queryPath, queryTo } from "@/lib/api";
+import type { CheckResult, PathResult, Region, SourceRegion } from "@/lib/types";
 
-type Tab = "check" | "from" | "to";
+type Tab = "path" | "check" | "from" | "to";
 
 const TABS: { id: Tab; label: string }[] = [
+  { id: "path", label: "Across firewalls" },
   { id: "check", label: "Path check" },
   { id: "from", label: "From" },
   { id: "to", label: "To" },
 ];
 
-const VERDICT_STYLE: Record<Verdict, string> = {
+const VERDICT_STYLE: Record<string, string> = {
   pass: "text-[var(--success)]",
   block: "text-destructive",
   reject: "text-accent",
+  unrouted: "text-accent",
 };
 
 export function SearchPage() {
   const { configId = "" } = useParams<{ configId: string }>();
   const [params] = useSearchParams();
-  const [tab, setTab] = useState<Tab>("check");
+  const [tab, setTab] = useState<Tab>("path");
   const [source, setSource] = useState(params.get("source") ?? "");
   const [destination, setDestination] = useState(params.get("destination") ?? "");
   const [port, setPort] = useState("");
   const [protocol, setProtocol] = useState("tcp");
 
+  const path = useMutation<PathResult, Error>({
+    mutationFn: () =>
+      queryPath(configId, {
+        source,
+        destination,
+        port: port ? Number(port) : null,
+        protocol,
+      }),
+  });
   const check = useMutation<CheckResult, Error>({
     mutationFn: () =>
       queryCheck(configId, { source, destination, port: port ? Number(port) : null, protocol }),
@@ -41,7 +52,7 @@ export function SearchPage() {
       queryTo(configId, { destination, port: port ? Number(port) : null, protocol }),
   });
 
-  const active = tab === "check" ? check : tab === "from" ? from : to;
+  const active = tab === "path" ? path : tab === "check" ? check : tab === "from" ? from : to;
 
   return (
     <div className="space-y-5">
@@ -115,7 +126,7 @@ export function SearchPage() {
           </select>
         </label>
         <Button type="submit" disabled={active.isPending}>
-          {tab === "check" ? "Check" : "Explore"}
+          {tab === "path" || tab === "check" ? "Check" : "Explore"}
         </Button>
       </form>
 
@@ -128,6 +139,7 @@ export function SearchPage() {
         </div>
       )}
 
+      {tab === "path" && path.data && <PathOutcome result={path.data} />}
       {tab === "check" && check.data && <CheckOutcome result={check.data} />}
       {tab === "from" && from.data && <RegionTable regions={from.data} />}
       {tab === "to" && to.data && <SourceTable regions={to.data} />}
@@ -159,6 +171,58 @@ function Field({
         onChange={(event) => onChange(event.target.value)}
       />
     </label>
+  );
+}
+
+function PathOutcome({ result }: { result: PathResult }) {
+  return (
+    <section className="space-y-3 rounded-lg border bg-card p-4">
+      <p className={`text-2xl font-semibold uppercase ${VERDICT_STYLE[result.verdict] ?? ""}`}>
+        {result.verdict}
+      </p>
+      <p className="text-sm text-muted-foreground">
+        A packet passes only if every firewall on the way allows it. The first one that refuses
+        ends the walk.
+      </p>
+      <ol className="space-y-2">
+        {result.hops.map((hop, index) => (
+          <li key={index} className="rounded-md border p-3 text-sm">
+            <div className="flex flex-wrap items-baseline gap-2">
+              <span className="font-medium">{hop.firewall_name}</span>
+              <span className="tabular text-muted-foreground">
+                in {hop.in_interface}
+                {hop.out_interface ? ` → out ${hop.out_interface}` : ""}
+                {hop.next_hop ? ` → ${hop.next_hop}` : ""}
+              </span>
+              <span className={`font-medium uppercase ${VERDICT_STYLE[hop.verdict] ?? ""}`}>
+                {hop.verdict}
+              </span>
+            </div>
+            {hop.translated_address && (
+              <p className="text-muted-foreground">
+                NAT rewrote the destination to{" "}
+                <code>
+                  {hop.translated_address}:{hop.translated_port}
+                </code>
+              </p>
+            )}
+            <p className="text-muted-foreground">
+              {hop.decided_by
+                ? `Rule #${hop.decided_by.seq} on ${hop.decided_by.interface}: ${
+                    hop.decided_by.descr || "(no description)"
+                  }`
+                : "No rule matched — the implicit default deny applied."}
+            </p>
+          </li>
+        ))}
+      </ol>
+      {result.stopped_reason && (
+        <p className="text-sm text-accent">
+          The walk stopped early: {result.stopped_reason}. Anything past that point is unknown to
+          this tool.
+        </p>
+      )}
+    </section>
   );
 }
 

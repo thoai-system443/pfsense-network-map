@@ -113,9 +113,13 @@ export function RiskPage() {
               Nothing reaches port {searched} on {protocol}.
             </p>
           ) : (
-            <Table label="Sources reaching the port" headers={["Source", "Destinations", "Ports", "Allowed by"]}>
+            <Table
+              label="Sources reaching the port"
+              headers={["Firewall", "Source", "Destinations", "Ports", "Allowed by"]}
+            >
               {portSearch.data.map((row, index) => (
                 <tr key={index} className="align-top">
+                  <td className="px-4 py-2 text-muted-foreground">{row.firewall}</td>
                   <td className="px-4 py-2 font-medium">{row.source_label}</td>
                   <td className="tabular px-4 py-2">{row.destination_cidrs.join(", ")}</td>
                   <td className="tabular px-4 py-2">{row.ports}</td>
@@ -137,6 +141,7 @@ export function RiskPage() {
             {data.deny_all.map((finding, index) => (
               <li key={index} className="rounded-md border border-destructive bg-card p-3 text-sm">
                 <div className="font-medium">
+                  <span className="text-muted-foreground">{finding.firewall} / </span>
                   <span className="tabular">{finding.interface}</span> —{" "}
                   {finding.rule.descr || "(no description)"}
                 </div>
@@ -189,6 +194,7 @@ function ExposureTable({ exposures }: { exposures: Exposure[] }) {
       <Table
         label="Exposure by object"
         headers={[
+          "Firewall",
           "Object",
           "Addresses",
           "Reaches other subnets on every port",
@@ -198,7 +204,8 @@ function ExposureTable({ exposures }: { exposures: Exposure[] }) {
         ]}
       >
         {exposed.map((exposure) => (
-          <tr key={exposure.subject.id} className="align-top">
+          <tr key={`${exposure.firewall}-${exposure.subject.id}`} className="align-top">
+            <td className="px-4 py-2 text-muted-foreground">{exposure.firewall}</td>
             <td className="px-4 py-2 font-medium">{exposure.subject.label}</td>
             <td className="tabular px-4 py-2">{exposure.subject.cidrs.join(", ")}</td>
             <td className="px-4 py-2">
