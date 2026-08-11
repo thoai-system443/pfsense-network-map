@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<pfsense>
+  <version>22.5</version>
+  <system><hostname>fw-core</hostname></system>
+  <interfaces>
+    <wan><if>em0</if><descr>TRANSIT</descr><enable></enable>
+      <ipaddr>10.10.20.2</ipaddr><subnet>24</subnet></wan>
+    <lan><if>em1</if><descr>SERVERS</descr><enable></enable>
+      <ipaddr>10.20.5.1</ipaddr><subnet>24</subnet></lan>
+  </interfaces>
+  <filter>
+    <rule>
+      <type>block</type><interface>wan</interface><ipprotocol>inet</ipprotocol>
+      <protocol>tcp</protocol>
+      <source><any></any></source>
+      <destination><network>lan</network><port>8443</port></destination>
+      <descr>fw-core refuses 8443 whatever the edge published</descr>
+    </rule>
+  </filter>
+</pfsense>
