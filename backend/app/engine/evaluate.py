@@ -110,10 +110,18 @@ def check(
     destination: str,
     port: int | None,
     protocol: str = "any",
+    in_interface: str | None = None,
 ) -> CheckResult:
+    """in_interface overrides where the packet is taken to arrive.
+
+    Deriving it from the source address is right for the firewall the traffic
+    originates behind. From the second firewall in a chain onwards the packet
+    arrives on the interface facing the previous one, which the source address
+    says nothing about.
+    """
     resolver = Resolver(config)
     family = 6 if ":" in source else 4
-    in_iface = ruleset.inbound_interface(config, source)
+    in_iface = in_interface or ruleset.inbound_interface(config, source)
 
     translation = nat.translate_destination(config, resolver, in_iface, destination, port, protocol)
     effective_destination = translation.address if translation else destination
@@ -173,7 +181,12 @@ def _to_regions(area: RectSet, verdict: str, ref: RuleRef | None) -> list[Region
     ]
 
 
-def explore_from(config: ParsedConfig, source: str, protocol: str = "any") -> list[Region]:
+def explore_from(
+    config: ParsedConfig,
+    source: str,
+    protocol: str = "any",
+    in_interface: str | None = None,
+) -> list[Region]:
     """Every destination reachable from source, as a complete partition of the space.
 
     Mirrors the quick / last-match rule of check() but over the whole space at
@@ -182,7 +195,7 @@ def explore_from(config: ParsedConfig, source: str, protocol: str = "any") -> li
     """
     resolver = Resolver(config)
     family = 6 if ":" in source else 4
-    in_iface = ruleset.inbound_interface(config, source)
+    in_iface = in_interface or ruleset.inbound_interface(config, source)
 
     unsettled = RectSet.full(family)
     settled: list[Region] = []
