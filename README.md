@@ -1,16 +1,16 @@
 # pfSense Network Map
 
-Đọc file backup `config.xml` của pfSense và trả lời câu hỏi mà bảng rule không
-trả lời được: **ai thực sự tới được đâu, trên cổng nào, và bị chặn ở đâu.**
+Reads a pfSense `config.xml` backup and answers the question a rule table cannot:
+**who can actually reach what, on which port, and where it gets stopped.**
 
-Nạp được nhiều firewall cùng lúc để đi hết đường mà packet phải qua. Chạy hoàn
-toàn offline, không gọi ra internet lúc nào.
+Load several firewalls at once to follow the whole path a packet has to take.
+Runs entirely offline and never calls out to the internet.
 
 ---
 
-## Chạy
+## Running it
 
-Hai stack độc lập, mỗi cái một `docker-compose.yml`:
+Two independent stacks, each with its own `docker-compose.yml`:
 
 ```bash
 cd backend && cp .env.example .env && docker compose up -d --build
@@ -20,102 +20,121 @@ cd backend && cp .env.example .env && docker compose up -d --build
 cd frontend && cp .env.example .env && docker compose up -d --build
 ```
 
-Mở <http://localhost:8011>. Backend ở `:8010`.
+Open <http://localhost:8011>. The backend is on `:8010`.
 
-Đổi port hoặc địa chỉ backend thì sửa `.env` rồi `docker compose up -d` — **không
-cần build lại**, `API_URL` được đọc lúc container khởi động.
+To change a port or the backend address, edit `.env` and run `docker compose up -d`
+— **no rebuild needed**, `API_URL` is read when the container starts.
 
-> `docker compose restart` **không** nạp lại biến môi trường. Luôn dùng `up -d`.
+> `docker compose restart` does **not** reload environment variables. Always use `up -d`.
 
-## Nạp dữ liệu
+## Loading data
 
-Trên trang đầu, chọn `config.xml` của firewall thứ nhất. Nếu mạng có nhiều
-firewall, chọn tiếp file của những cái còn lại — chúng vào cùng một workspace và
-được phân tích như một hệ thống. Bấm **Open the map** khi xong.
+On the first page, pick the `config.xml` of your first firewall. If the network has
+more than one, pick the rest as well — they go into the same workspace and get
+analysed as one system. Click **Open the map** when done.
 
-**Việc đầu tiên nên làm: đọc danh sách cảnh báo.** Parser báo cáo mọi field nó
-không nhận ra thay vì im lặng bỏ qua. Danh sách rỗng nghĩa là nó hiểu trọn file;
-không rỗng nghĩa là kết quả có thể thiếu, và cảnh báo chỉ đúng chỗ nào.
+**Read the warning list first.** The parser reports every field it does not
+recognise instead of skipping it silently. An empty list means it understood the
+whole file; a non-empty one means the results may be incomplete, and the warnings
+say exactly where.
 
-## Năm màn hình
+## Five screens
 
-| | Trả lời |
+| | Answers |
 |---|---|
-| **Topology** | Mạng trông như thế nào — interface, VLAN, tunnel, và subnet mà nhiều firewall cùng đấu vào |
-| **Access map** | Zone nào tới được zone nào, trên cổng nào. Kéo node để gỡ rối, click để lọc, chuột phải để ẩn |
-| **Search** | Bốn kiểu tra cứu, xem bên dưới |
-| **Inventory** | Liệt kê và lọc interface, alias, rule, NAT theo IP / network / port |
-| **Risk** | Object nào lộ ra ngoài, ai tới được một cổng, và rule deny-all nào không chặn thật |
+| **Topology** | What the network looks like — interfaces, VLANs, tunnels, and subnets several firewalls share |
+| **Access map** | Which zone reaches which, on which ports. Drag nodes to untangle, click to filter, right-click to hide |
+| **Search** | Four kinds of lookup, see below |
+| **Inventory** | List and filter interfaces, aliases, rules and NAT by IP / network / port |
+| **Risk** | Which objects are exposed, who reaches a given port, and which deny-all rules do not actually deny |
 
-### Bốn kiểu tra cứu
+### Four kinds of lookup
 
-- **Across firewalls** — `A → B:port` đi hết chuỗi firewall. `pass` chỉ khi **mọi**
-  chặng cho qua; chặng đầu tiên từ chối là chặng được báo, kèm firewall, interface
-  và rule cụ thể.
-- **Path check** — như trên nhưng chỉ trên **một** firewall, kèm trace đầy đủ các
-  rule đã xét. Hữu ích khi muốn soi riêng một bộ rule.
-- **From** — một nguồn đi được tới đâu. Kết quả là phân hoạch **đầy đủ** của toàn
-  bộ không gian (địa chỉ × cổng), không phải liệt kê mẫu.
-- **To** — ai tới được một đích, nhóm theo interface vào.
+- **Across firewalls** — `A → B:port` walked through the whole chain. It only
+  passes if **every** hop allows it; the first hop that refuses is the one
+  reported, with its firewall, interface and rule.
+- **Path check** — the same, but on **one** firewall, with a full trace of the
+  rules examined. Useful when you want to study a single ruleset.
+- **From** — everywhere one source can reach. The result is a **complete**
+  partition of the space (addresses × ports), not a sample.
+- **To** — everyone who can reach one destination, grouped by inbound interface.
 
-Mọi ô nhập nhận IP, CIDR, tên alias, hoặc tên interface.
+Every field accepts an IP, a CIDR, an alias name, or an interface name.
 
----
+**A subnet is a set of addresses, and the ruleset may treat parts of it
+differently.** Enter one host and you get a single verdict with the full trace;
+enter a subnet, alias or interface and you get a **table of regions**, each part
+of the space with its own verdict. One quarantined host inside an otherwise
+permitted `/24` shows up as its own `block` row rather than disappearing into a
+single answer.
 
-## Điều quan trọng nhất cần biết
-
-Công cụ này mô phỏng `pf`, và chỗ dễ mô phỏng sai nhất đã được xử lý tường minh:
-
-- **Floating rule mặc định không `quick`**, interface rule thì có. Một floating
-  rule khớp vẫn có thể bị interface rule đứng sau ghi đè. Coi là first-match-wins
-  sẽ cho kết quả sai.
-- **Action `match` không quyết định gì.** Nó gắn queue rồi để đánh giá đi tiếp.
-  Coi nó là `block` biến một floating shaper rule thành tường chặn cả interface.
-- **NAT đích áp trước khi lọc.** Rule cho phép phải trỏ tới IP nội bộ đã dịch,
-  không phải IP public.
-- **Rule của tunnel VPN nằm trên pseudo-interface** `openvpn` / `enc0`, không phải
-  trên một interface được cấu hình.
-
-`explore_from` và `check` là hai đường tính khác nhau cho cùng ngữ nghĩa, và có
-test chốt rằng chúng **luôn** cho cùng kết quả.
-
-## Giới hạn, nói trước
-
-- **Parser viết theo schema pfSense 2.7 và chưa được kiểm chứng đầy đủ.** Sáu
-  field đã được bổ sung từ config thật (`srcmac`, `dstmac`, `bridgeto`, `match`,
-  `source_hash_key`, `ipprotocol`). Còn thiếu gì nữa thì danh sách cảnh báo sẽ
-  chỉ ra.
-- **Chuỗi firewall dừng khi next-hop thuộc thiết bị không được nạp.** Giao diện
-  báo rõ là đã dừng và dừng ở đâu. Nó **không** kết luận "thông" cho phần chưa
-  kiểm.
-- **Không mô phỏng state table hay reply traffic.** Mọi đánh giá là cho packet
-  đầu tiên của một kết nối.
-- **`srcmac` / `dstmac` / `bridgeto` không được mô phỏng.** Rule dùng chúng khớp
-  ít packet hơn thực tế, nên kết quả liên quan có thể **rộng hơn** thực tế. Parser
-  cảnh báo mỗi khi gặp.
-- **Outbound NAT không ảnh hưởng verdict** — chỉ hiển thị để tham khảo.
-- **Không có database.** Config nằm trong RAM tiến trình backend; restart là mất,
-  phải nạp lại. Vì vậy backend chỉ chạy **một** worker uvicorn.
+**`any` is not one question either.** A rule naming `tcp` says nothing about
+`udp`. Asking for `any` checks each protocol on its own and reports `partial`
+when they disagree, with a per-protocol breakdown. `partial` is deliberately
+shown in a different colour from `pass` — reading it as "allowed" is the mistake
+worth preventing.
 
 ---
 
-## Kiến trúc
+## The things most worth knowing
+
+This tool simulates `pf`, and the parts that are easiest to get wrong are handled
+explicitly:
+
+- **Floating rules are not `quick` by default**, interface rules are. A floating
+  rule that matches can still be overridden by an interface rule after it.
+  Treating this as first-match-wins gives the wrong answer.
+- **The `match` action decides nothing.** It assigns a queue and lets evaluation
+  continue. Treating it as `block` turns a floating shaper rule into a wall
+  across the whole interface.
+- **Destination NAT is applied before filtering.** The rule that allows the
+  traffic points at the translated internal address, not the public one.
+- **VPN tunnel rules live on the pseudo-interfaces** `openvpn` / `enc0`, not on a
+  configured interface.
+
+`explore_from` and `check` are two different ways of computing the same
+semantics, and a test asserts they **always** agree — across every fixture in the
+tree, including the ones with NAT and multiple firewalls, and for `any` as well
+as a named protocol.
+
+## Limits, stated up front
+
+- **The parser follows the pfSense 2.7 schema and has not been fully validated.**
+  Six fields were added after meeting real configs (`srcmac`, `dstmac`,
+  `bridgeto`, `match`, `source_hash_key`, `ipprotocol`). Anything still missing
+  will show up in the warning list.
+- **The firewall chain stops when a next hop belongs to a device that was not
+  loaded.** The interface says it stopped and where. It does **not** claim the
+  unchecked part is reachable.
+- **State tables and reply traffic are not simulated.** Every verdict is for the
+  first packet of a connection.
+- **`srcmac` / `dstmac` / `bridgeto` are not simulated.** Rules using them match
+  fewer packets in reality, so results involving them may be **broader** than the
+  truth. The parser warns every time it sees one.
+- **Outbound NAT does not affect verdicts** — it is shown for reference only.
+- **No database.** Configs live in the backend process's memory; a restart loses
+  them and you load again. That is also why the backend runs a **single** uvicorn
+  worker.
+
+---
+
+## Architecture
 
 ```
-backend/            FastAPI, không database, nginx là port duy nhất publish
-  app/parser/       chỉ hiểu XML, cho ra kiểu dữ liệu thuần
-  app/engine/       chỉ làm việc trên kiểu dữ liệu đó, không bao giờ chạm XML
-  app/api/          ghép hai tầng kia với HTTP
-frontend/           Vite + React + TypeScript, build ra dist/ tĩnh
+backend/            FastAPI, no database, nginx is the only published port
+  app/parser/       understands XML only, produces plain data types
+  app/engine/       works on those types only, never touches XML
+  app/api/          joins the two to HTTP
+frontend/           Vite + React + TypeScript, builds to a static dist/
 ```
 
-Ranh giới parser ↔ engine cho phép test engine bằng object dựng tay, không cần
-file XML.
+The parser ↔ engine boundary is what lets the engine be tested with hand-built
+objects instead of XML files.
 
 ### API
 
-Tất cả dưới `/api/v1`. Tài liệu tương tác ở `/api/v1/docs` (HTTP Basic auth,
-đặt `DOCS_USER` / `DOCS_PASSWORD` trong `.env`).
+Everything lives under `/api/v1`. Interactive docs at `/api/v1/docs` (HTTP Basic
+auth, set `DOCS_USER` / `DOCS_PASSWORD` in `.env`).
 
 | Method | Path |
 |---|---|
@@ -127,7 +146,10 @@ Tất cả dưới `/api/v1`. Tài liệu tương tác ở `/api/v1/docs` (HTTP 
 | `POST` | `/configs/{id}/query/path` `/check` `/from` `/to` |
 | `GET` | `/configs/{id}/risk` `/risk/port` |
 
-## Phát triển
+`/query/check` and `/query/path` return `kind: "point"` when both ends are a
+single address, and `kind: "regions"` when either side is a set.
+
+## Development
 
 ```bash
 cd backend
@@ -140,16 +162,17 @@ cd frontend
 npm install && npm run test && npm run lint
 ```
 
-Hoặc chạy test backend trong container: `cd backend && ./test.sh`.
+Or run the backend tests in a container: `cd backend && ./test.sh`.
 
-Chi tiết kiến trúc, quy ước và những cạm bẫy đã gặp nằm trong
-[BACKEND_GUIDE.md](BACKEND_GUIDE.md) và [FRONTEND_GUIDE.md](FRONTEND_GUIDE.md).
-Thiết kế ban đầu và kế hoạch triển khai ở [docs/superpowers/](docs/superpowers/).
+Architecture details, conventions and the traps already hit are in
+[BACKEND_GUIDE.md](BACKEND_GUIDE.md) and [FRONTEND_GUIDE.md](FRONTEND_GUIDE.md).
+The original design and implementation plans are in
+[docs/superpowers/](docs/superpowers/).
 
 ## Offline
 
-Không CDN font, không map tile, không gọi mạng ngoài lúc chạy. Alias loại `url`
-và `urltable` **không** được fetch — chúng cho tập rỗng và kết quả liên quan được
-đánh dấu `unresolved`.
+No CDN fonts, no map tiles, no network calls at runtime. Aliases of type `url`
+and `urltable` are **not** fetched — they resolve to an empty set and any result
+depending on them is marked `unresolved`.
 
-Sau khi kéo image một lần, toàn bộ hệ thống chạy được trong môi trường air-gapped.
+Once the images are pulled, the whole system runs in an air-gapped environment.
