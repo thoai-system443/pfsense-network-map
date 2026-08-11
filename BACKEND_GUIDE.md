@@ -2,6 +2,7 @@
 
 | Version | Date | Changes |
 |---|---|---|
+| 1.5.0 | 2026-08-10 | Bỏ hẳn `unoccupied_grants` khỏi engine và API |
 | 1.4.0 | 2026-08-10 | Action `match` không quyết định verdict; nhận `source_hash_key`/`ipprotocol` của outbound NAT |
 | 1.3.0 | 2026-08-10 | Thêm `engine/risk.py`: 4 tiêu chí phơi nhiễm, tra theo port, khoảng địa chỉ trống, kiểm tra deny-all |
 | 1.2.0 | 2026-08-10 | `CORS_ORIGINS` nhận chuỗi thô và danh sách phẩy, có kiểm tra định dạng |
@@ -149,17 +150,13 @@ loại `host`/`network`.
 |---|---|
 | `exposures` | 4 tiêu chí cho từng đối tượng |
 | `port_reachability` | Nguồn nào tới được bất cứ đâu trên một port |
-| `unoccupied_grants` | Khoảng địa chỉ rule pass cho phép nhưng không object nào chiếm |
 | `deny_all_audit` | Block-all không chặn thật, và rule chết sau block-all |
 
-Hai điểm cần biết khi đọc kết quả:
+Điểm cần biết khi đọc kết quả:
 
 - **"Reachable from every internal zone"** không tính internet. Tiêu chí này đo
   bán kính lây lan nội bộ; nguồn từ WAN không được làm một host trông như thể ai
   bên trong cũng tới được.
-- **`unoccupied_grants` bỏ qua phần ngoài không gian nội bộ khi rule ghi `any`.**
-  `any` nghĩa là cả internet một cách có chủ đích, không phải lỗi cấu hình; chỉ
-  phần nằm trong dải địa chỉ của chính hệ thống mới đáng báo.
 
 ## Action `match`
 

@@ -187,15 +187,6 @@ export interface PortAccess {
   rule: RuleRef | null;
 }
 
-export interface Grant {
-  rule: RuleRef;
-  interface: string;
-  side: "source" | "destination";
-  granted_cidrs: string[];
-  unoccupied_cidrs: string[];
-  unoccupied_addresses: number;
-}
-
 export interface DenyAllFinding {
   kind: "block-all-not-quick" | "unreachable-rule";
   interface: string;
@@ -205,6 +196,5 @@ export interface DenyAllFinding {
 
 export interface RiskReport {
   exposures: Exposure[];
-  unoccupied_grants: Grant[];
   deny_all: DenyAllFinding[];
 }

@@ -22,13 +22,6 @@ def test_report_lists_exposures_per_subject():
     assert "DMZ" in lan["reaches_other_subnets_any_port"]
 
 
-def test_report_lists_unoccupied_grants():
-    body = client.get(f"/api/v1/configs/{upload('risky.xml')}/risk").json()
-    assert any(
-        g["rule"]["descr"] == "Postgres from the 10 space" for g in body["unoccupied_grants"]
-    )
-
-
 def test_report_lists_deny_all_findings():
     body = client.get(f"/api/v1/configs/{upload('risky.xml')}/risk").json()
     kinds = {f["kind"] for f in body["deny_all"]}

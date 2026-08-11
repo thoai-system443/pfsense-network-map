@@ -25,6 +25,5 @@ def by_port(
 def report(config: ConfigDep) -> dict:
     return {
         "exposures": [asdict(entry) for entry in risk.exposures(config)],
-        "unoccupied_grants": [asdict(entry) for entry in risk.unoccupied_grants(config)],
         "deny_all": [asdict(entry) for entry in risk.deny_all_audit(config)],
     }

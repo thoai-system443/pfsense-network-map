@@ -45,7 +45,7 @@ export function RiskPage() {
     );
   }
 
-  const data = report.data ?? { exposures: [], unoccupied_grants: [], deny_all: [] };
+  const data = report.data ?? { exposures: [], deny_all: [] };
 
   return (
     <div className="space-y-8">

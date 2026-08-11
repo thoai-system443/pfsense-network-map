@@ -66,16 +66,6 @@ const report: RiskReport = {
       inbound_internet_ports: "",
     },
   ],
-  unoccupied_grants: [
-    {
-      rule,
-      interface: "opt1",
-      side: "source",
-      granted_cidrs: ["10.0.0.0/8"],
-      unoccupied_cidrs: ["10.0.0.0/13", "10.8.0.0/15"],
-      unoccupied_addresses: 16776960,
-    },
-  ],
   deny_all: [
     {
       kind: "block-all-not-quick",
@@ -130,7 +120,6 @@ describe("RiskPage", () => {
     renderPage();
     await screen.findByText("LAN");
     expect(screen.queryByText(/granted to nothing/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/16,776,960/)).not.toBeInTheDocument();
   });
 
   it("lists deny-all findings with the reason", async () => {
@@ -140,11 +129,7 @@ describe("RiskPage", () => {
   });
 
   it("says so when nothing was found instead of showing empty tables", async () => {
-    vi.spyOn(api, "getRiskReport").mockResolvedValue({
-      exposures: [],
-      unoccupied_grants: [],
-      deny_all: [],
-    });
+    vi.spyOn(api, "getRiskReport").mockResolvedValue({ exposures: [], deny_all: [] });
     renderPage();
     expect(await screen.findByText(/every block-all rule/i)).toBeInTheDocument();
   });

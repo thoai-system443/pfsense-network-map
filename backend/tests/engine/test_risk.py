@@ -99,22 +99,6 @@ class TestPortReachability:
         assert "LAN" in {r.source_label for r in results}
 
 
-class TestUnoccupiedGrants:
-    def test_reports_granted_space_no_object_occupies(self):
-        grants = risk.unoccupied_grants(load("risky.xml"))
-        assert any(g.rule.descr == "Postgres from the 10 space" for g in grants)
-
-    def test_excludes_the_part_that_a_real_subnet_covers(self):
-        grants = risk.unoccupied_grants(load("risky.xml"))
-        grant = next(g for g in grants if g.rule.descr == "Postgres from the 10 space")
-        assert "10.0.0.0/8" not in grant.unoccupied_cidrs
-        assert grant.unoccupied_addresses > 16_000_000
-
-    def test_a_rule_confined_to_declared_objects_is_not_reported(self):
-        grants = risk.unoccupied_grants(load("risky.xml"))
-        assert not any(g.rule.descr == "LAN to DMZ everything" for g in grants)
-
-
 class TestDenyAllAudit:
     def test_flags_a_block_all_that_does_not_stop_evaluation(self):
         findings = risk.deny_all_audit(load("risky.xml"))

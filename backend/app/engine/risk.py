@@ -50,16 +50,6 @@ class PortAccess:
 
 
 @dataclass(frozen=True)
-class Grant:
-    rule: RuleRef
-    interface: str
-    side: str
-    granted_cidrs: list[str]
-    unoccupied_cidrs: list[str]
-    unoccupied_addresses: int
-
-
-@dataclass(frozen=True)
 class DenyAllFinding:
     kind: str
     interface: str
@@ -257,72 +247,6 @@ def port_reachability(config: ParsedConfig, port: int, protocol: str = "any") ->
                     destination_cidrs=region.addresses,
                     ports=region.ports,
                     rule=region.decided_by,
-                )
-            )
-    return out
-
-
-def _declared_space(config: ParsedConfig, resolver: Resolver) -> IpSet:
-    """Every address the configuration actually names somewhere."""
-    space = IpSet.empty(FAMILY)
-    for _, _, addresses in _zone_sets(config, resolver):
-        space = space.union(addresses)
-    for alias in config.aliases:
-        if alias.type not in {"host", "network"}:
-            continue
-        try:
-            addresses, _ = resolver.expand_alias(alias.name, FAMILY)
-        except AliasCycleError:
-            continue
-        space = space.union(addresses)
-    for forward in config.nat.port_forwards:
-        if not forward.target:
-            continue
-        try:
-            space = space.union(IpSet.from_cidr(forward.target))
-        except ValueError:
-            continue
-    return space
-
-
-def _count(addresses: IpSet) -> int:
-    return sum(hi - lo + 1 for lo, hi in addresses.items)
-
-
-def unoccupied_grants(config: ParsedConfig) -> list[Grant]:
-    """Address space a pass rule permits that no declared object occupies.
-
-    A rule written against 10.0.0.0/8 when only one /24 exists hands the other
-    sixteen million addresses the same access, silently, the moment anything
-    appears there. That gap never shows up in the rule table itself.
-    """
-    resolver = Resolver(config)
-    declared = _declared_space(config, resolver)
-    internal = _internal_space(_zone_sets(config, resolver))
-
-    out: list[Grant] = []
-    for rule in config.rules:
-        if rule.disabled or rule.action != "pass":
-            continue
-        for side, spec in (("source", rule.source), ("destination", rule.destination)):
-            try:
-                granted, _ = resolver.addresses(spec, FAMILY)
-            except AliasCycleError:
-                continue
-            # `any` means the internet by design, not a misconfiguration, so only
-            # the part inside the site's own address space is interesting.
-            scoped = granted.intersect(internal) if spec.any else granted
-            unoccupied = scoped.subtract(declared)
-            if unoccupied.is_empty():
-                continue
-            out.append(
-                Grant(
-                    rule=RuleRef.of(rule),
-                    interface=",".join(rule.interfaces),
-                    side=side,
-                    granted_cidrs=granted.to_cidrs(),
-                    unoccupied_cidrs=unoccupied.to_cidrs(),
-                    unoccupied_addresses=_count(unoccupied),
                 )
             )
     return out
