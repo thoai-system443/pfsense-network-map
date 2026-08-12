@@ -8,7 +8,7 @@ about pf semantics is decided in this module.
 import ipaddress
 from dataclasses import dataclass, field
 
-from app.engine import ruleset
+from app.engine import routing, ruleset
 from app.engine.evaluate import RuleRef, explore_from
 from app.engine.ipset import IpSet
 from app.engine.match import family_matches, protocol_matches
@@ -132,6 +132,39 @@ def _internal_space(zones: list[tuple[str, str, IpSet]]) -> IpSet:
     for _, _, addresses in zones:
         space = space.union(addresses)
     return space
+
+
+def _routed_space(config: ParsedConfig) -> IpSet:
+    """Networks a static route points at, through a gateway that is not the way out.
+
+    A branch office behind an internal router is part of the site even though no
+    interface here carries its subnet. A route out of the WAN is the opposite:
+    the packet leaves, so the destination stays external however private its
+    addresses look.
+    """
+    table = routing.build_table(config)
+    default = next((entry for entry in table if entry.kind == "default"), None)
+    out_interface = default.out_interface if default else None
+
+    space = IpSet.empty(FAMILY)
+    for entry in table:
+        if entry.kind != "static" or entry.out_interface == out_interface:
+            continue
+        try:
+            space = space.union(IpSet.from_cidr(entry.network))
+        except ValueError:
+            continue
+    return space
+
+
+def internal_space(config: ParsedConfig) -> IpSet:
+    """Every network this config knows to be part of the site.
+
+    "The internet" is whatever is left, so anything missing here turns into a
+    false report of internet exposure.
+    """
+    resolver = Resolver(config)
+    return _internal_space(_zone_sets(config, resolver)).union(_routed_space(config))
 
 
 def subjects(config: ParsedConfig) -> list[Subject]:
@@ -262,11 +295,18 @@ def _region_addresses(region) -> IpSet:
     return addresses
 
 
-def exposures(config: ParsedConfig) -> list[Exposure]:
-    """Every address that breaks one of the four rules, one row each."""
+def exposures(config: ParsedConfig, also_internal: IpSet | None = None) -> list[Exposure]:
+    """Every address that breaks one of the four rules, one row each.
+
+    also_internal carries the networks of the other firewalls in the workspace.
+    Without it each config is judged alone and treats its neighbours' subnets as
+    the internet.
+    """
     resolver = Resolver(config)
     zones = _zone_sets(config, resolver)
-    internal = _internal_space(zones)
+    internal = _internal_space(zones).union(_routed_space(config))
+    if also_internal is not None:
+        internal = internal.union(also_internal)
     internet = internal.complement()
     internet_probe = _probe(internet)
     allowed_from_internet = _allowed_from(config, internet_probe) if internet_probe else []

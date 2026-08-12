@@ -94,3 +94,25 @@ def test_port_search_rejects_a_port_out_of_range():
 
 def test_unknown_config_returns_404():
     assert client.get("/api/v1/configs/nope/risk").status_code == 404
+
+
+def test_a_neighbour_firewalls_subnet_is_not_reported_as_internet():
+    """routed.xml reaches 10.20.5.0/24, which core.xml carries. Judged alone,
+    the edge firewall calls that the internet."""
+    config_id = upload("routed.xml")
+    with (FIXTURES / "core.xml").open("rb") as handle:
+        client.post(
+            f"/api/v1/configs/{config_id}/firewalls",
+            files={"file": ("core.xml", handle, "text/xml")},
+        )
+    body = client.get(f"/api/v1/configs/{config_id}/risk").json()
+
+    from app.engine import risk
+    from app.parser.loader import parse_config
+
+    edge = parse_config((FIXTURES / "routed.xml").read_bytes())
+    alone = {e.cidr for e in risk.exposures(edge) if e.reaches_internet}
+    together = {
+        e["cidr"] for e in body["exposures"] if e["firewall"] == "fw-edge" and e["reaches_internet"]
+    }
+    assert together <= alone, "loading a neighbour can only remove internet findings"

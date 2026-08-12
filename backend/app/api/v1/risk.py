@@ -6,6 +6,7 @@ from fastapi import APIRouter, Query
 
 from app.api.v1.configs import WorkspaceDep
 from app.engine import risk
+from app.engine.ipset import IpSet
 from app.engine.portset import MAX_PORT
 
 router = APIRouter(prefix="/configs/{config_id}/risk", tags=["risk"])
@@ -44,11 +45,25 @@ def report(workspace: WorkspaceDep) -> dict:
 
 
 def _report(firewalls) -> dict:
+    # Every firewall is judged knowing the whole site. Alone, each one treats
+    # its neighbours' subnets as the internet and reports exposure that is not
+    # there.
+    known = {
+        firewall.id: risk.internal_space(firewall.config) for firewall in firewalls
+    }
+
+    def elsewhere(firewall):
+        space = IpSet.empty(4)
+        for other_id, other in known.items():
+            if other_id != firewall.id:
+                space = space.union(other)
+        return space
+
     return {
         "exposures": [
             {**asdict(entry), "firewall": firewall.name}
             for firewall in firewalls
-            for entry in risk.exposures(firewall.config)
+            for entry in risk.exposures(firewall.config, also_internal=elsewhere(firewall))
         ],
         "deny_all": [
             {**asdict(entry), "firewall": firewall.name}

@@ -2,6 +2,7 @@
 
 | Version | Date | Changes |
 |---|---|---|
+| 1.14.0 | 2026-08-12 | "Internet" tính cả static route nội bộ và mạng của firewall khác |
 | 1.13.0 | 2026-08-12 | Risk: subnet cắt theo source của rule; mỗi phát hiện kèm rule cho phép |
 | 1.12.0 | 2026-08-12 | Risk: mỗi IP/network một dòng, 4 tiêu chí mới, cache trên workspace |
 | 1.11.0 | 2026-08-12 | Nhận diện `statepolicy`, `pflow`, `target_subnet` từ config thật |
@@ -340,6 +341,33 @@ Hai cạm bẫy đã mắc khi làm:
 2. **Traffic cùng subnet không đi qua firewall.** Không loại network chứa chính
    địa chỉ đó thì mọi rule allow-any biến thành phát hiện "host này tới được
    network nó đang nằm trong". `_sits_inside()` loại chúng.
+
+### "Internet" định nghĩa bằng phép loại trừ
+
+`reaches_internet` **không** phải "tới được `0.0.0.0/0`", cũng **không** phải
+"tới được network khác". Nó là: *tới được ít nhất một địa chỉ không nằm trong bất
+kỳ network nào công cụ biết*. Một IP public duy nhất trên một port duy nhất là đã
+tính. Tiêu chí "tới network khác" là `reaches_networks_any_port`, chặt hơn hẳn:
+phải phủ **trọn** một network trên **toàn dải** port.
+
+Hệ quả: định nghĩa chỉ tốt bằng danh sách mạng mà công cụ biết. Hai loại mạng
+từng bị bỏ sót và bị báo nhầm là phơi nhiễm internet:
+
+1. **Mạng sau static route nội bộ.** Parser đọc được static route, nhưng
+   `_zone_sets()` chỉ gom interface và VPN tunnel. `_routed_space()` bổ sung
+   đích của các static route — **trừ** route đi ra qua interface của default
+   gateway, vì packet đó rời khỏi site thật, dù địa chỉ đích trông riêng tư.
+2. **Subnet của firewall khác trong cùng workspace.** `exposures()` chạy trên
+   **một** config, nên firewall A không biết mạng của B. `exposures()` nhận thêm
+   `also_internal`, và `_report()` truyền vào hợp các `internal_space()` của mọi
+   firewall còn lại.
+
+Nạp thêm một firewall vì vậy chỉ có thể **bớt** phát hiện internet, không bao giờ
+thêm — đó là bất biến trong `test_a_neighbour_firewalls_subnet_is_not_reported_as_internet`.
+
+Vẫn còn một giới hạn: mạng của firewall B chỉ được cộng vào không gian nội bộ,
+**không** trở thành zone có tên trong báo cáo của A. Nên "A tới trọn mạng của B
+trên mọi port" hiện không hiện thành dòng riêng.
 
 ### Subnet: đi ngược từ rule, không duyệt từng địa chỉ
 
