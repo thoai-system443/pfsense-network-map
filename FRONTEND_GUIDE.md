@@ -2,6 +2,7 @@
 
 | Version | Date | Changes |
 |---|---|---|
+| 1.9.0 | 2026-08-12 | Risk: xuất "Exposure by object" ra PDF qua print stylesheet |
 | 1.8.0 | 2026-08-12 | Risk: xuất "Exposure by object" ra CSV |
 | 1.7.0 | 2026-08-11 | Search: bảng vùng cho subnet, `partial` cho protocol=any, cột Protocol |
 | 1.6.0 | 2026-08-11 | Who reaches a port: thêm ô "Hide traffic out to the internet", mặc định bật |
@@ -150,6 +151,27 @@ Mỗi cờ được xuất thành **hai** cột: cờ (`yes`/`no`) và cổng. G
 
 Bảng chỉ hiện object có rủi ro, và file xuất ra đúng những dòng đó — không phải
 toàn bộ object đã kiểm.
+
+## Xuất PDF: dùng chính trình duyệt
+
+Nút "Export PDF" gọi `window.print()`, phần còn lại nằm ở khối `@media print`
+trong `src/index.css`. Chọn cách này thay vì nhúng thư viện PDF vì hai lý do:
+bundle không tăng một byte nào, và **tiếng Việt hiển thị đúng miễn phí** — thư
+viện PDF phía client dùng font WinAnsi mặc định, muốn viết được "Kết nối" thì
+phải nhúng thêm một TTF Unicode, cộng cả thư viện lẫn font là 600KB–1MB vào
+bundle 258KB hiện tại.
+
+Vùng được in đánh dấu bằng `data-print-region`; thứ cần ẩn dùng
+`data-print-hide`. Anh-em của vùng in bị ẩn theo cấu trúc chứ không liệt kê tay,
+để thêm một section mới vào trang không âm thầm lọt vào PDF.
+
+**Cạm bẫy đã mắc:** rule ẩn anh-em ban đầu viết là
+`main > div > *:not([data-print-region])`. Trang nào không có vùng in — Topology,
+Search, Inventory — sẽ khớp toàn bộ và **in ra trắng hoàn toàn**. Phải bọc bằng
+`main:has([data-print-region])` để rule chỉ áp cho trang thật sự có vùng in.
+
+`print-color-adjust: exact` là bắt buộc: mặc định trình duyệt bỏ màu khi in, mà
+màu đỏ đánh dấu phơi nhiễm chính là thứ không được mất.
 
 ## Hiệu năng: chỗ nặng không nằm ở GPU
 

@@ -230,6 +230,22 @@ describe("the hide-outbound switch", () => {
 });
 
 describe("exporting exposure by object", () => {
+  it("prints only the exposure section, via the browser's own PDF export", async () => {
+    vi.spyOn(api, "getRiskReport").mockResolvedValue(report);
+    const print = vi.fn();
+    vi.stubGlobal("print", print);
+
+    renderPage();
+    await userEvent.click(await screen.findByRole("button", { name: /export pdf/i }));
+
+    expect(print).toHaveBeenCalledOnce();
+    // The print stylesheet keys off this attribute; without it the whole page
+    // would end up in the PDF.
+    const section = screen.getByRole("table", { name: "Exposure by object" }).closest("section");
+    expect(section).toHaveAttribute("data-print-region");
+    vi.unstubAllGlobals();
+  });
+
   it("puts each flag and its ports in their own column", () => {
     const [lan] = exposureRows([report.exposures[0]]);
     expect(lan).toEqual([

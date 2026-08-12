@@ -109,3 +109,53 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Printing.
+ *
+ * "Export PDF" is the browser's own print-to-PDF. That keeps the bundle as it
+ * is and, more importantly, renders Vietnamese correctly for free — a PDF
+ * library would need a Unicode font embedded before it could spell "Kết nối".
+ *
+ * Only the marked region is printed. Its siblings are hidden structurally so
+ * that adding a section to a page does not silently start appearing in the PDF.
+ */
+@media print {
+  header,
+  [data-print-hide] {
+    display: none !important;
+  }
+
+  /* Scoped with :has() on purpose. Unscoped, this hides every direct child of
+     any page's content wrapper, so printing a page that has no print region —
+     Topology, Search — would come out blank. */
+  main:has([data-print-region]) > div > *:not([data-print-region]) {
+    display: none !important;
+  }
+
+  main {
+    max-width: none;
+    padding: 0;
+  }
+
+  /* Browsers drop colour by default, and the red that marks an exposure is the
+     one thing on this table that must survive. */
+  [data-print-region] {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* A wide table split across pages is unreadable without repeated headers. */
+  thead {
+    display: table-header-group;
+  }
+
+  tr {
+    break-inside: avoid;
+  }
+
+  /* The table has seven columns; portrait crushes them. */
+  @page {
+    size: landscape;
+    margin: 12mm;
+  }
+}

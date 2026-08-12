@@ -236,18 +236,25 @@ function ExposureTable({ exposures }: { exposures: Exposure[] }) {
   }
 
   return (
-    <section className="space-y-2">
+    <section className="space-y-2" data-print-region>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="font-medium">Exposure by object</h2>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() =>
-            downloadCsv("exposure-by-object.csv", toCsv(EXPOSURE_HEADERS, exposureRows(exposed)))
-          }
-        >
-          Export CSV
-        </Button>
+        <div className="flex gap-2" data-print-hide>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() =>
+              downloadCsv("exposure-by-object.csv", toCsv(EXPOSURE_HEADERS, exposureRows(exposed)))
+            }
+          >
+            Export CSV
+          </Button>
+          {/* The browser's own print-to-PDF. See the @media print block in
+              index.css for what ends up on the page. */}
+          <Button type="button" variant="outline" onClick={() => window.print()}>
+            Export PDF
+          </Button>
+        </div>
       </div>
       {/*
         The count matters: a short table with no total reads as "the analysis
