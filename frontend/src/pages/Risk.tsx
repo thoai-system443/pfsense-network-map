@@ -10,11 +10,26 @@ import type { Exposure, PortAccess } from "@/lib/types";
 /** A dash reads better than an empty cell when the answer is a definite "no". */
 const NONE = "—";
 
-function Flag({ on, detail }: { on: boolean; detail?: string }) {
+function Flag({ on, detail, only }: { on: boolean; detail?: string; only?: string[] }) {
   if (!on) return <span className="text-muted-foreground">{NONE}</span>;
   return (
-    <span className="font-medium text-destructive">
-      yes{detail ? <span className="tabular font-normal"> ({detail})</span> : null}
+    <>
+      <span className="font-medium text-destructive">
+        yes{detail ? <span className="tabular font-normal"> ({detail})</span> : null}
+      </span>
+      <Only addresses={only} />
+    </>
+  );
+}
+
+/* An object is often a whole subnet, and one host inside it having access is
+   not the same as the subnet having it. When the finding covers only part of
+   the object, that part is named. */
+function Only({ addresses }: { addresses?: string[] }) {
+  if (!addresses?.length) return null;
+  return (
+    <span className="tabular block text-xs text-muted-foreground">
+      only {addresses.join(", ")}
     </span>
   );
 }
@@ -192,13 +207,23 @@ const EXPOSURE_HEADERS = [
   "Kind",
   "Addresses",
   "Reaches other subnets on every port",
+  "Applies to",
   "Reaches the internet",
   "Internet ports",
+  "Applies to",
   "Reachable from every internal zone",
   "Inbound internal ports",
+  "Applies to",
   "Reachable from the internet",
   "Inbound internet ports",
+  "Applies to",
+  "Approximate",
 ];
+
+/** "all of it" beats a blank cell: a reader should not have to guess whether an
+ *  empty column means "everything" or "nothing was computed". */
+const appliesTo = (on: boolean, addresses: string[]) =>
+  !on ? "" : addresses.length ? addresses.join(", ") : "all";
 
 const yesNo = (on: boolean) => (on ? "yes" : "no");
 
@@ -211,12 +236,17 @@ export function exposureRows(exposures: Exposure[]): string[][] {
     exposure.subject.kind,
     exposure.subject.cidrs.join(", "),
     exposure.reaches_other_subnets_any_port.join(", "),
+    appliesTo(exposure.reaches_other_subnets_any_port.length > 0, exposure.wide_open_sources),
     yesNo(exposure.reaches_internet),
     exposure.reaches_internet ? exposure.internet_ports : "",
+    appliesTo(exposure.reaches_internet, exposure.internet_sources),
     yesNo(exposure.reachable_from_all_internal),
     exposure.reachable_from_all_internal ? exposure.inbound_internal_ports : "",
+    appliesTo(exposure.reachable_from_all_internal, exposure.inbound_internal_targets),
     yesNo(exposure.reachable_from_internet),
     exposure.reachable_from_internet ? exposure.inbound_internet_ports : "",
+    appliesTo(exposure.reachable_from_internet, exposure.inbound_internet_targets),
+    yesNo(exposure.approximate),
   ]);
 }
 
@@ -283,26 +313,35 @@ function ExposureTable({ exposures }: { exposures: Exposure[] }) {
             <td className="tabular px-4 py-2">{exposure.subject.cidrs.join(", ")}</td>
             <td className="px-4 py-2">
               {exposure.reaches_other_subnets_any_port.length > 0 ? (
-                <span className="font-medium text-destructive">
-                  {exposure.reaches_other_subnets_any_port.join(", ")}
-                </span>
+                <>
+                  <span className="font-medium text-destructive">
+                    {exposure.reaches_other_subnets_any_port.join(", ")}
+                  </span>
+                  <Only addresses={exposure.wide_open_sources} />
+                </>
               ) : (
                 <span className="text-muted-foreground">{NONE}</span>
               )}
             </td>
             <td className="px-4 py-2">
-              <Flag on={exposure.reaches_internet} detail={exposure.internet_ports} />
+              <Flag
+                on={exposure.reaches_internet}
+                detail={exposure.internet_ports}
+                only={exposure.internet_sources}
+              />
             </td>
             <td className="px-4 py-2">
               <Flag
                 on={exposure.reachable_from_all_internal}
                 detail={exposure.inbound_internal_ports}
+                only={exposure.inbound_internal_targets}
               />
             </td>
             <td className="px-4 py-2">
               <Flag
                 on={exposure.reachable_from_internet}
                 detail={exposure.inbound_internet_ports}
+                only={exposure.inbound_internet_targets}
               />
             </td>
           </tr>

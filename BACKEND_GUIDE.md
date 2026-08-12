@@ -2,6 +2,7 @@
 
 | Version | Date | Changes |
 |---|---|---|
+| 1.12.0 | 2026-08-12 | Risk đánh giá theo tập con thay vì một địa chỉ đại diện |
 | 1.11.0 | 2026-08-12 | Nhận diện `statepolicy`, `pflow`, `target_subnet` từ config thật |
 | 1.10.0 | 2026-08-11 | Search trả kết quả theo vùng: subnet, protocol, NAT theo tập, chặng theo tập |
 | 1.9.0 | 2026-08-11 | `risk/port` thêm `hide_internet_destinations`, mặc định bật |
@@ -313,6 +314,37 @@ port đã nói không?*
 | `statepolicy` | Chọn state gắn với interface (`if-bound`) hay dùng chung (`floating`). Quyết định cách giữ state, không đổi verdict của packet đầu tiên — thứ duy nhất công cụ này xét |
 | `pflow` | Đánh dấu rule để xuất flow ra collector. Telemetry, không phải lọc |
 | `target_subnet` | Thuộc outbound NAT, chạy **sau** quyết định lọc nên không đổi được verdict |
+
+## Risk: một địa chỉ đại diện là không đủ
+
+`exposures()` từng rút mỗi object về **một** địa chỉ đại diện (`_probe`) rồi gán
+kết quả cho toàn bộ object. Sai theo **cả hai** chiều, và chiều thứ hai nguy hiểm
+hơn:
+
+- **Bịa ra quyền truy cập.** Một /24 có đúng một host được ra internet thì cả
+  254 địa chỉ bị báo là ra được — nếu host đó tình cờ là địa chỉ đại diện.
+- **Giấu mất phơi nhiễm.** Host bị hở ở `10.0.0.77` hoàn toàn vô hình, vì
+  `_probe` chỉ chạy từ `10.0.0.1`. Một công cụ rủi ro bỏ sót phơi nhiễm còn tệ
+  hơn là báo thừa.
+
+Nay `_pieces()` cắt tập địa chỉ của object tại mọi chỗ mà ruleset thôi coi nó là
+một khối: theo subnet của interface (quyết định `in_interface`) và theo source
+của từng rule. Trong một mảnh, **mọi địa chỉ hành xử như nhau** — cùng một
+interface, và mỗi rule hoặc phủ cả mảnh hoặc không phủ tí nào — nên chạy engine
+từ một địa chỉ của mảnh là chính xác cho cả mảnh.
+
+Một rule chỉ cắt khi nó phủ **một phần** mảnh. Rule phủ trọn hoặc không dính thì
+bỏ qua, nên số mảnh thực tế nhỏ hơn số rule rất nhiều.
+
+Mỗi tiêu chí kèm theo tập con mà nó thật sự nói tới (`internet_sources`,
+`wide_open_sources`, `inbound_internal_targets`, `inbound_internet_targets`).
+Rỗng nghĩa là cả object — nên dòng chỉ mang địa chỉ khi nếu không sẽ bị đọc thành
+"cả subnet này", đúng cái hiểu nhầm cần chặn.
+
+`MAX_PIECES` chặn config bệnh lý. Chạm trần **không** im lặng: `approximate=True`
+đi kèm kết quả, vì rơi về xấp xỉ mà không nói gì chính là lỗi vừa sửa. Đo trên
+/24 có 253 rule /32: 0,19s, không chạm trần. Config 3000 rule: `risk.exposures`
+0,028s → 0,108s.
 
 ## Chưa kiểm chứng
 

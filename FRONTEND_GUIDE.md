@@ -2,6 +2,7 @@
 
 | Version | Date | Changes |
 |---|---|---|
+| 1.10.0 | 2026-08-12 | Risk: mỗi phát hiện ghi rõ nó nói về phần nào của object |
 | 1.9.0 | 2026-08-12 | Risk: xuất "Exposure by object" ra PDF qua print stylesheet |
 | 1.8.0 | 2026-08-12 | Risk: xuất "Exposure by object" ra CSV |
 | 1.7.0 | 2026-08-11 | Search: bảng vùng cho subnet, `partial` cho protocol=any, cột Protocol |
@@ -97,6 +98,13 @@ internet" mà không biết cổng nào thì vẫn phải mở lại trang Searc
 Bảng chỉ liệt kê object khớp ít nhất một trong bốn tiêu chí. Phải in kèm tổng số
 object đã kiểm ("3 of 5") — một bảng ngắn không có tổng đọc như thể phân tích
 tìm được ít, trong khi thực ra phần lớn object sạch.
+
+Một object thường là cả một subnet, và **một host trong đó có quyền không đồng
+nghĩa với cả subnet có quyền**. Khi phát hiện chỉ nói về một phần, ô hiển thị
+thêm dòng `only 10.0.0.1/32`. Rỗng nghĩa là cả object — không in gì thêm để dòng
+không bị nhiễu. CSV có cột "Applies to" tương ứng, ghi `all` khi phủ trọn, vì ô
+trống khiến người đọc phải đoán giữa "tất cả" và "chưa tính".
+
 
 
 ## Nhiều firewall
