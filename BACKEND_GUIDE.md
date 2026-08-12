@@ -2,6 +2,7 @@
 
 | Version | Date | Changes |
 |---|---|---|
+| 1.11.0 | 2026-08-12 | Nhận diện `statepolicy`, `pflow`, `target_subnet` từ config thật |
 | 1.10.0 | 2026-08-11 | Search trả kết quả theo vùng: subnet, protocol, NAT theo tập, chặng theo tập |
 | 1.9.0 | 2026-08-11 | `risk/port` thêm `hide_internet_destinations`, mặc định bật |
 | 1.8.0 | 2026-08-10 | Cache parse CIDR, dựng sẵn tập địa chỉ của region, nội tuyến phép giao hình chữ nhật |
@@ -303,11 +304,23 @@ Gặp field thu hẹp mới trong config thật thì thêm vào **cả hai**:
 cảnh báo). Chỉ thêm vào danh sách thứ nhất là biến một giới hạn đã biết thành một
 lỗi im lặng.
 
+Ngược lại, field **không** thu hẹp thì chỉ thêm vào `KNOWN_RULE_CHILDREN`. Câu
+hỏi để phân loại là: *field này có làm rule khớp ít packet hơn phần địa chỉ và
+port đã nói không?*
+
+| Field | Vì sao không cảnh báo |
+|---|---|
+| `statepolicy` | Chọn state gắn với interface (`if-bound`) hay dùng chung (`floating`). Quyết định cách giữ state, không đổi verdict của packet đầu tiên — thứ duy nhất công cụ này xét |
+| `pflow` | Đánh dấu rule để xuất flow ra collector. Telemetry, không phải lọc |
+| `target_subnet` | Thuộc outbound NAT, chạy **sau** quyết định lọc nên không đổi được verdict |
+
 ## Chưa kiểm chứng
 
 Parser viết theo schema pfSense 2.7. Lần đối chiếu đầu tiên với config thật đã
-phát hiện ba field thiếu (`srcmac`, `dstmac`, `bridgeto`) — cơ chế `ParseWarning`
-hoạt động đúng như thiết kế. Vẫn còn hai chỗ rủi ro:
+phát hiện ba field thiếu (`srcmac`, `dstmac`, `bridgeto`); các lần sau bổ sung
+tiếp `match`, `source_hash_key`, `ipprotocol`, rồi `statepolicy`, `pflow`,
+`target_subnet` — cơ chế `ParseWarning` hoạt động đúng như thiết kế. Vẫn còn hai
+chỗ rủi ro:
 
 1. **Tên field** trong các hằng `KNOWN_*_CHILDREN` của từng module parser. Danh
    sách `warnings` trong response upload sẽ chỉ ra ngay chỗ thiếu — đó là lý do

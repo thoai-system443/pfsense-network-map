@@ -100,9 +100,9 @@ as a named protocol.
 ## Limits, stated up front
 
 - **The parser follows the pfSense 2.7 schema and has not been fully validated.**
-  Six fields were added after meeting real configs (`srcmac`, `dstmac`,
-  `bridgeto`, `match`, `source_hash_key`, `ipprotocol`). Anything still missing
-  will show up in the warning list.
+  Nine fields were added after meeting real configs (`srcmac`, `dstmac`,
+  `bridgeto`, `match`, `source_hash_key`, `ipprotocol`, `statepolicy`, `pflow`,
+  `target_subnet`). Anything still missing will show up in the warning list.
 - **The firewall chain stops when a next hop belongs to a device that was not
   loaded.** The interface says it stopped and where. It does **not** claim the
   unchecked part is reachable.

@@ -48,6 +48,12 @@ KNOWN_RULE_CHILDREN = {
     "srcmac",
     "dstmac",
     "bridgeto",
+    # Also from a real backup, but neither changes which packets the rule
+    # matches: statepolicy decides whether the state is bound to the interface
+    # or floats, and pflow marks the rule for flow export. Both act on state and
+    # telemetry, after the pass/block decision this tool reports.
+    "statepolicy",
+    "pflow",
 }
 
 # Field name -> what it narrows, for the warning text.

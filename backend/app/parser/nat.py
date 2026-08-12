@@ -52,6 +52,9 @@ KNOWN_OUTBOUND_RULE_CHILDREN = {
     "target",
     "targetip",
     "targetip_subnet",
+    # Real backups carry this spelling too. Outbound NAT never changes a
+    # verdict, so like the rest of these it is recognised and left alone.
+    "target_subnet",
     "descr",
     "disabled",
     "staticnatport",
