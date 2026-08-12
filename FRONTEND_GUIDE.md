@@ -2,6 +2,7 @@
 
 | Version | Date | Changes |
 |---|---|---|
+| 1.10.0 | 2026-08-12 | Risk: mỗi IP/network một dòng thay vì mỗi object một dòng |
 | 1.9.0 | 2026-08-12 | Risk: xuất "Exposure by object" ra PDF qua print stylesheet |
 | 1.8.0 | 2026-08-12 | Risk: xuất "Exposure by object" ra CSV |
 | 1.7.0 | 2026-08-11 | Search: bảng vùng cho subnet, `partial` cho protocol=any, cột Protocol |
@@ -94,9 +95,16 @@ cùng một chuỗi (ví dụ một CIDR) xuất hiện ở nhiều bảng.
 Cột phơi nhiễm hiển thị kèm **danh sách port**, không chỉ dấu tick. Biết "lộ ra
 internet" mà không biết cổng nào thì vẫn phải mở lại trang Search để tra.
 
-Bảng chỉ liệt kê object khớp ít nhất một trong bốn tiêu chí. Phải in kèm tổng số
-object đã kiểm ("3 of 5") — một bảng ngắn không có tổng đọc như thể phân tích
-tìm được ít, trong khi thực ra phần lớn object sạch.
+Mỗi dòng là **một IP/network**, không phải một object: một alias có thể chứa host
+hở toang bên cạnh host đóng kín, gộp thành một dòng thì phải chọn một câu chuyện
+cho cả hai. Cột "Object" chỉ để biết địa chỉ đó thuộc về đâu.
+
+Backend chỉ trả về địa chỉ có vi phạm, nên frontend **không lọc lại** — thêm bộ
+lọc ở đây sẽ là hai nguồn sự thật cho cùng một câu hỏi.
+
+Nhãn network xuất hiện ở hai cột khác nhau ("tới các network này" và "được các
+network này vào"), nên trong test đừng tìm dòng bằng tên object: "LAN" vừa là tên
+object vừa là tên network ở dòng khác. Tìm bằng địa chỉ.
 
 
 ## Nhiều firewall

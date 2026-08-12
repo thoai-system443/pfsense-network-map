@@ -11,7 +11,12 @@ def load(name: str):
 
 
 def exposure(config, subject_id: str):
-    return next(e for e in risk.exposures(config) if e.subject.id == subject_id)
+    """The finding for a subject, or None when it breaks none of the rules.
+
+    Only addresses that break a rule are reported at all, so absence is the
+    assertion for "not flagged".
+    """
+    return next((e for e in risk.exposures(config) if e.subject.id == subject_id), None)
 
 
 class TestSubjects:
@@ -29,18 +34,18 @@ class TestSubjects:
         assert "opt2" not in ids
 
 
-class TestReachesOtherSubnetsOnEveryPort:
+class TestReachesOtherNetworksOnEveryPort:
     def test_flags_a_zone_with_unrestricted_lateral_access(self):
         found = exposure(load("risky.xml"), "lan")
-        assert "DMZ" in found.reaches_other_subnets_any_port
+        assert "DMZ" in found.reaches_networks_any_port
 
     def test_a_single_open_port_is_not_enough(self):
         """LAN reaches the internet on 443 only, so that is not 'any port'."""
         found = exposure(load("risky.xml"), "lan")
-        assert "Internet" not in found.reaches_other_subnets_any_port
+        assert "Internet" not in found.reaches_networks_any_port
 
     def test_a_zone_with_no_lateral_access_is_not_flagged(self):
-        assert exposure(load("risky.xml"), "opt2").reaches_other_subnets_any_port == []
+        assert exposure(load("risky.xml"), "opt2") is None
 
 
 class TestReachesInternet:
@@ -50,7 +55,7 @@ class TestReachesInternet:
         assert "443" in found.internet_ports
 
     def test_a_locked_down_zone_does_not_reach_the_internet(self):
-        assert exposure(load("risky.xml"), "opt2").reaches_internet is False
+        assert exposure(load("risky.xml"), "opt2") is None
 
 
 class TestReachableFromInternet:
@@ -63,16 +68,16 @@ class TestReachableFromInternet:
         assert exposure(load("risky.xml"), "lan").reachable_from_internet is False
 
 
-class TestReachableFromEveryInternalZone:
+class TestReachableFromAnotherNetworkOnEveryPort:
     def test_a_zone_nothing_can_reach_is_not_flagged(self):
-        assert exposure(load("risky.xml"), "opt2").reachable_from_all_internal is False
+        assert exposure(load("risky.xml"), "opt2") is None
 
-    def test_internet_is_not_counted_as_an_internal_source(self):
+    def test_internet_is_not_counted_as_a_network_source(self):
         """The criterion is about internal blast radius, so WAN-sourced traffic
-        must not make a host look reachable from everywhere inside."""
+        must not make a host look reachable from another network."""
         found = exposure(load("risky.xml"), "alias:DB_SERVER")
         assert found.reachable_from_internet is True
-        assert found.reachable_from_all_internal is False
+        assert "Internet" not in found.reachable_from_networks_any_port
 
 
 class TestPortReachability:

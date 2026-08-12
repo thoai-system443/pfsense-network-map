@@ -15,11 +15,46 @@ def upload(name: str) -> str:
         ]
 
 
-def test_report_lists_exposures_per_subject():
+def test_report_lists_exposures_per_address():
     body = client.get(f"/api/v1/configs/{upload('risky.xml')}/risk").json()
     lan = next(e for e in body["exposures"] if e["subject"]["id"] == "lan")
+    assert lan["cidr"], "every finding names the address it is about"
     assert lan["reaches_internet"] is True
-    assert "DMZ" in lan["reaches_other_subnets_any_port"]
+    assert "DMZ" in lan["reaches_networks_any_port"]
+
+
+def test_the_report_is_computed_once_and_reused(monkeypatch):
+    """Equal output proves nothing on its own — count the actual work."""
+    from app.engine import risk
+
+    config_id = upload("risky.xml")
+    client.get(f"/api/v1/configs/{config_id}/risk")
+
+    calls = 0
+    real = risk.exposures
+
+    def counted(config):
+        nonlocal calls
+        calls += 1
+        return real(config)
+
+    monkeypatch.setattr(risk, "exposures", counted)
+    second = client.get(f"/api/v1/configs/{config_id}/risk").json()
+
+    assert calls == 0, "the second call recomputed the report"
+    assert second["exposures"]
+
+
+def test_adding_a_firewall_drops_the_cached_report():
+    config_id = upload("routed.xml")
+    before = client.get(f"/api/v1/configs/{config_id}/risk").json()
+    with (FIXTURES / "core.xml").open("rb") as handle:
+        client.post(
+            f"/api/v1/configs/{config_id}/firewalls",
+            files={"file": ("core.xml", handle, "text/xml")},
+        )
+    after = client.get(f"/api/v1/configs/{config_id}/risk").json()
+    assert after != before, "a stale report would hide the firewall just loaded"
 
 
 def test_report_lists_deny_all_findings():

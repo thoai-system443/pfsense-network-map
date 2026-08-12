@@ -8,7 +8,7 @@ from app.engine.fabric import Firewall
 from app.parser.loader import parse_config
 from app.parser.types import ParsedConfig
 from app.settings import settings
-from app.store import ConfigMeta, config_store
+from app.store import ConfigMeta, Workspace, config_store
 
 router = APIRouter(prefix="/configs", tags=["configs"])
 
@@ -27,10 +27,19 @@ def get_firewalls(config_id: str) -> list[Firewall]:
         raise HTTPException(status_code=404, detail="config not found") from None
 
 
+def get_workspace(config_id: str) -> Workspace:
+    """For the endpoints that want the workspace's cache, not just its configs."""
+    try:
+        return config_store.workspace(config_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="config not found") from None
+
+
 # Annotated rather than a default argument: calling Depends()/File() in a
 # default is what ruff's B008 flags, and this is the form FastAPI recommends.
 ConfigDep = Annotated[ParsedConfig, Depends(get_config)]
 FirewallsDep = Annotated[list[Firewall], Depends(get_firewalls)]
+WorkspaceDep = Annotated["Workspace", Depends(get_workspace)]
 UploadDep = Annotated[UploadFile, File()]
 
 

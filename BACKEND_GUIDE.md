@@ -2,6 +2,7 @@
 
 | Version | Date | Changes |
 |---|---|---|
+| 1.12.0 | 2026-08-12 | Risk: mỗi IP/network một dòng, 4 tiêu chí mới, cache trên workspace |
 | 1.11.0 | 2026-08-12 | Nhận diện `statepolicy`, `pflow`, `target_subnet` từ config thật |
 | 1.10.0 | 2026-08-11 | Search trả kết quả theo vùng: subnet, protocol, NAT theo tập, chặng theo tập |
 | 1.9.0 | 2026-08-11 | `risk/port` thêm `hide_internet_destinations`, mặc định bật |
@@ -313,6 +314,36 @@ port đã nói không?*
 | `statepolicy` | Chọn state gắn với interface (`if-bound`) hay dùng chung (`floating`). Quyết định cách giữ state, không đổi verdict của packet đầu tiên — thứ duy nhất công cụ này xét |
 | `pflow` | Đánh dấu rule để xuất flow ra collector. Telemetry, không phải lọc |
 | `target_subnet` | Thuộc outbound NAT, chạy **sau** quyết định lọc nên không đổi được verdict |
+
+## Risk: đơn vị báo cáo là địa chỉ, không phải object
+
+Một object có thể chứa nhiều địa chỉ và chúng **không cùng số phận**: alias
+`NHAN_VIEN` giữ ba host, chỉ một host có rule ra internet. Nên `exposures()` trả
+một dòng cho **mỗi địa chỉ**, và chỉ những địa chỉ vi phạm mới xuất hiện.
+
+Bốn tiêu chí:
+
+| Tiêu chí | Vi phạm khi |
+|---|---|
+| `reaches_networks_any_port` | Địa chỉ tới trọn một network khác, trên **toàn dải** port |
+| `reaches_internet` | Địa chỉ ra được internet, dù chỉ một port |
+| `reachable_from_internet` | Internet vào được địa chỉ, dù chỉ một port |
+| `reachable_from_networks_any_port` | Network khác vào được địa chỉ, trên **toàn dải** port |
+
+Hai cạm bẫy đã mắc khi làm:
+
+1. **`to_cidrs()` gộp địa chỉ liền kề.** Alias có `10.0.0.2` và `10.0.0.3` trả về
+   `10.0.0.2/31`, nên hỏi từng địa chỉ không còn hỏi được — đúng trường hợp mạng
+   cấp IP /32 liên tiếp. `Subject.members` giữ **mục khai báo**, phân giải riêng
+   từng cái; `Subject.cidrs` vẫn là bản gộp để mô tả object.
+2. **Traffic cùng subnet không đi qua firewall.** Không loại network chứa chính
+   địa chỉ đó thì mọi rule allow-any biến thành phát hiện "host này tới được
+   network nó đang nằm trong". `_sits_inside()` loại chúng.
+
+Báo cáo được **cache trên workspace** (`Workspace.cached`). Config đã parse thì
+bất biến, nên thứ suy ra từ nó sống cùng workspace; nạp thêm firewall là sự kiện
+duy nhất xoá cache. Test đếm số lần gọi `risk.exposures` chứ không so hai
+response bằng nhau — hai response giống nhau vẫn đúng kể cả khi không có cache.
 
 ## Chưa kiểm chứng
 

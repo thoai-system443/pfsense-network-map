@@ -252,18 +252,22 @@ export interface RiskSubject {
   label: string;
   kind: "interface" | "tunnel" | "alias";
   cidrs: string[];
+  /** The entries as declared, kept apart. cidrs merges adjacent hosts. */
+  members: string[];
 }
 
+/** One address or network that breaks at least one of the four rules. */
 export interface Exposure {
   firewall: string;
   subject: RiskSubject;
-  reaches_other_subnets_any_port: string[];
+  /** The address this row is about, not the whole object. */
+  cidr: string;
+  reaches_networks_any_port: string[];
   reaches_internet: boolean;
   internet_ports: string;
-  reachable_from_all_internal: boolean;
-  inbound_internal_ports: string;
   reachable_from_internet: boolean;
   inbound_internet_ports: string;
+  reachable_from_networks_any_port: string[];
 }
 
 export interface PortAccess {

@@ -37,36 +37,37 @@ const report: RiskReport = {
   exposures: [
     {
       firewall: "fw-edge",
-      subject: { id: "lan", label: "LAN", kind: "interface", cidrs: ["192.168.1.0/24"] },
-      reaches_other_subnets_any_port: ["DMZ"],
+      subject: {
+        id: "lan",
+        label: "LAN",
+        kind: "interface",
+        cidrs: ["192.168.1.0/24"],
+        members: ["192.168.1.0/24"],
+      },
+      cidr: "192.168.1.0/24",
+      reaches_networks_any_port: ["DMZ"],
       reaches_internet: true,
       internet_ports: "443",
-      reachable_from_all_internal: false,
-      inbound_internal_ports: "",
       reachable_from_internet: false,
       inbound_internet_ports: "",
+      reachable_from_networks_any_port: [],
     },
     {
       firewall: "fw-edge",
-      subject: { id: "alias:DB_SERVER", label: "DB_SERVER", kind: "alias", cidrs: ["10.10.20.50/32"] },
-      reaches_other_subnets_any_port: [],
+      subject: {
+        id: "alias:DB_SERVER",
+        label: "DB_SERVER",
+        kind: "alias",
+        cidrs: ["10.10.20.50/32"],
+        members: ["10.10.20.50/32"],
+      },
+      cidr: "10.10.20.50/32",
+      reaches_networks_any_port: [],
       reaches_internet: false,
       internet_ports: "",
-      reachable_from_all_internal: false,
-      inbound_internal_ports: "",
       reachable_from_internet: true,
       inbound_internet_ports: "8443",
-    },
-    {
-      firewall: "fw-edge",
-      subject: { id: "opt2", label: "GUEST", kind: "interface", cidrs: ["172.16.5.0/24"] },
-      reaches_other_subnets_any_port: [],
-      reaches_internet: false,
-      internet_ports: "",
-      reachable_from_all_internal: false,
-      inbound_internal_ports: "",
-      reachable_from_internet: false,
-      inbound_internet_ports: "",
+      reachable_from_networks_any_port: ["LAN"],
     },
   ],
   deny_all: [
@@ -83,11 +84,28 @@ const report: RiskReport = {
 afterEach(() => vi.restoreAllMocks());
 
 describe("RiskPage", () => {
-  it("marks a zone that reaches other subnets on every port", async () => {
+  it("marks an address that reaches another network on every port", async () => {
     vi.spyOn(api, "getRiskReport").mockResolvedValue(report);
     renderPage();
-    const row = (await screen.findByText("LAN")).closest("tr")!;
+    // Keyed on the address, not the object: "LAN" is both an object label and
+    // the name of a network another row can be reached from.
+    const row = (await screen.findByText("192.168.1.0/24")).closest("tr")!;
     expect(row).toHaveTextContent("DMZ");
+  });
+
+  it("gives each IP or network its own row", async () => {
+    const [lan, db] = report.exposures;
+    vi.spyOn(api, "getRiskReport").mockResolvedValue({
+      ...report,
+      exposures: [
+        lan,
+        db,
+        { ...db, cidr: "10.10.20.51/32", inbound_internet_ports: "9443" },
+      ],
+    });
+    renderPage();
+    expect(await screen.findByText("10.10.20.50/32")).toBeInTheDocument();
+    expect(screen.getByText("10.10.20.51/32").closest("tr")!).toHaveTextContent("9443");
   });
 
   it("shows the ports behind an internet exposure rather than just a tick", async () => {
@@ -97,32 +115,22 @@ describe("RiskPage", () => {
     expect(row).toHaveTextContent("8443");
   });
 
-  it("leaves out objects with nothing flagged", async () => {
+  it("counts the addresses listed, so a short table is not ambiguous", async () => {
     vi.spyOn(api, "getRiskReport").mockResolvedValue(report);
     renderPage();
-    await screen.findByText("LAN");
-    expect(screen.queryByText("GUEST")).not.toBeInTheDocument();
+    expect(await screen.findByText(/2 addresses match/i)).toBeInTheDocument();
   });
 
-  it("says how many objects were checked, so an empty table is not ambiguous", async () => {
-    vi.spyOn(api, "getRiskReport").mockResolvedValue(report);
+  it("says outright when nothing is exposed", async () => {
+    vi.spyOn(api, "getRiskReport").mockResolvedValue({ ...report, exposures: [] });
     renderPage();
-    expect(await screen.findByText(/2 of 3 objects/i)).toBeInTheDocument();
-  });
-
-  it("says outright when no object is exposed", async () => {
-    vi.spyOn(api, "getRiskReport").mockResolvedValue({
-      ...report,
-      exposures: [report.exposures[2]],
-    });
-    renderPage();
-    expect(await screen.findByText(/none of the 1 object/i)).toBeInTheDocument();
+    expect(await screen.findByText(/no address matches/i)).toBeInTheDocument();
   });
 
   it("no longer shows the unoccupied address space section", async () => {
     vi.spyOn(api, "getRiskReport").mockResolvedValue(report);
     renderPage();
-    await screen.findByText("LAN");
+    await screen.findByText("192.168.1.0/24");
     expect(screen.queryByText(/granted to nothing/i)).not.toBeInTheDocument();
   });
 
@@ -258,7 +266,6 @@ describe("exporting exposure by object", () => {
       "443",
       "no",
       "",
-      "no",
       "",
     ]);
   });
@@ -266,7 +273,7 @@ describe("exporting exposure by object", () => {
   it("leaves the ports column empty when the flag is off", () => {
     // internet_ports can carry a leftover value; a "no" row must not imply one.
     const [row] = exposureRows([
-      { ...report.exposures[2], internet_ports: "443", reaches_internet: false },
+      { ...report.exposures[1], internet_ports: "443", reaches_internet: false },
     ]);
     expect(row[5]).toBe("no");
     expect(row[6]).toBe("");

@@ -176,28 +176,20 @@ export function RiskPage() {
   );
 }
 
-/** True when at least one of the four criteria fired. */
-function isExposed(exposure: Exposure): boolean {
-  return (
-    exposure.reaches_other_subnets_any_port.length > 0 ||
-    exposure.reaches_internet ||
-    exposure.reachable_from_all_internal ||
-    exposure.reachable_from_internet
-  );
-}
+/* The backend only returns addresses that break a rule, so there is nothing
+   left to filter here. */
 
 const EXPOSURE_HEADERS = [
   "Firewall",
   "Object",
   "Kind",
   "Addresses",
-  "Reaches other subnets on every port",
+  "Reaches these networks on every port",
   "Reaches the internet",
   "Internet ports",
-  "Reachable from every internal zone",
-  "Inbound internal ports",
   "Reachable from the internet",
   "Inbound internet ports",
+  "Reachable from these networks on every port",
 ];
 
 const yesNo = (on: boolean) => (on ? "yes" : "no");
@@ -209,27 +201,28 @@ export function exposureRows(exposures: Exposure[]): string[][] {
     exposure.firewall,
     exposure.subject.label,
     exposure.subject.kind,
-    exposure.subject.cidrs.join(", "),
-    exposure.reaches_other_subnets_any_port.join(", "),
+    exposure.cidr,
+    exposure.reaches_networks_any_port.join(", "),
     yesNo(exposure.reaches_internet),
     exposure.reaches_internet ? exposure.internet_ports : "",
-    yesNo(exposure.reachable_from_all_internal),
-    exposure.reachable_from_all_internal ? exposure.inbound_internal_ports : "",
     yesNo(exposure.reachable_from_internet),
     exposure.reachable_from_internet ? exposure.inbound_internet_ports : "",
+    exposure.reachable_from_networks_any_port.join(", "),
   ]);
 }
 
-function ExposureTable({ exposures }: { exposures: Exposure[] }) {
-  const exposed = exposures.filter(isExposed);
+function Networks({ labels }: { labels: string[] }) {
+  if (labels.length === 0) return <span className="text-muted-foreground">{NONE}</span>;
+  return <span className="font-medium text-destructive">{labels.join(", ")}</span>;
+}
 
-  if (exposures.length > 0 && exposed.length === 0) {
+function ExposureTable({ exposures: exposed }: { exposures: Exposure[] }) {
+  if (exposed.length === 0) {
     return (
       <section className="space-y-2">
         <h2 className="font-medium">Exposure by object</h2>
         <p className="text-sm text-muted-foreground">
-          None of the {exposures.length} object{exposures.length === 1 ? "" : "s"} checked matches
-          any of the four criteria.
+          No address matches any of the four criteria.
         </p>
       </section>
     );
@@ -261,49 +254,45 @@ function ExposureTable({ exposures }: { exposures: Exposure[] }) {
         found little", when it actually means "most objects came back clean".
       */}
       <p className="text-sm text-muted-foreground">
-        {exposed.length} of {exposures.length} objects match at least one criterion. Objects with
-        nothing flagged are left out, of the table and of the export alike.
+        {exposed.length} address{exposed.length === 1 ? "" : "es"} match at least one criterion.
+        Each row is one IP or network, not a whole object: an alias can hold one host that is wide
+        open and another that is not. Addresses with nothing flagged are left out, of the table and
+        of the export alike.
       </p>
       <Table
         label="Exposure by object"
         headers={[
           "Firewall",
           "Object",
-          "Addresses",
-          "Reaches other subnets on every port",
+          "IP / network",
+          "Reaches these networks on every port",
           "Reaches the internet",
-          "Reachable from every internal zone",
           "Reachable from the internet",
+          "Reachable from these networks on every port",
         ]}
       >
         {exposed.map((exposure) => (
-          <tr key={`${exposure.firewall}-${exposure.subject.id}`} className="align-top">
+          <tr
+            key={`${exposure.firewall}-${exposure.subject.id}-${exposure.cidr}`}
+            className="align-top"
+          >
             <td className="px-4 py-2 text-muted-foreground">{exposure.firewall}</td>
-            <td className="px-4 py-2 font-medium">{exposure.subject.label}</td>
-            <td className="tabular px-4 py-2">{exposure.subject.cidrs.join(", ")}</td>
+            <td className="px-4 py-2 text-muted-foreground">{exposure.subject.label}</td>
+            <td className="tabular px-4 py-2 font-medium">{exposure.cidr}</td>
             <td className="px-4 py-2">
-              {exposure.reaches_other_subnets_any_port.length > 0 ? (
-                <span className="font-medium text-destructive">
-                  {exposure.reaches_other_subnets_any_port.join(", ")}
-                </span>
-              ) : (
-                <span className="text-muted-foreground">{NONE}</span>
-              )}
+              <Networks labels={exposure.reaches_networks_any_port} />
             </td>
             <td className="px-4 py-2">
               <Flag on={exposure.reaches_internet} detail={exposure.internet_ports} />
             </td>
             <td className="px-4 py-2">
               <Flag
-                on={exposure.reachable_from_all_internal}
-                detail={exposure.inbound_internal_ports}
-              />
-            </td>
-            <td className="px-4 py-2">
-              <Flag
                 on={exposure.reachable_from_internet}
                 detail={exposure.inbound_internet_ports}
               />
+            </td>
+            <td className="px-4 py-2">
+              <Networks labels={exposure.reachable_from_networks_any_port} />
             </td>
           </tr>
         ))}

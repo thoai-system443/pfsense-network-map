@@ -14,7 +14,7 @@ from app.engine.ipset import IpSet
 from app.engine.match import family_matches, protocol_matches
 from app.engine.portset import MAX_PORT, PortSet
 from app.engine.resolver import AliasCycleError, Resolver
-from app.parser.types import FilterRule, ParsedConfig
+from app.parser.types import AddrSpec, FilterRule, ParsedConfig
 
 FAMILY = 4
 INTERNET_LABEL = "Internet"
@@ -26,18 +26,41 @@ class Subject:
     label: str
     kind: str
     cidrs: list[str]
+    # The entries as the config declares them, each kept apart. cidrs merges
+    # 10.0.0.2 and 10.0.0.3 into 10.0.0.2/31, which is right for describing the
+    # object and wrong for asking about its members one at a time.
+    members: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
 class Exposure:
+    """One address or network that breaks at least one of the four rules.
+
+    The unit is the address, not the object it belongs to: an alias holding two
+    hosts can have one of them wide open and the other locked down, and a row
+    per object would have to pick one story for both.
+    """
+
     subject: Subject
-    reaches_other_subnets_any_port: list[str] = field(default_factory=list)
+    cidr: str
+    # Outbound: this address reaches a whole other network, on every port.
+    reaches_networks_any_port: list[str] = field(default_factory=list)
+    # Outbound: this address reaches the internet at all.
     reaches_internet: bool = False
     internet_ports: str = ""
-    reachable_from_all_internal: bool = False
-    inbound_internal_ports: str = ""
+    # Inbound: the internet reaches this address, on even one port.
     reachable_from_internet: bool = False
     inbound_internet_ports: str = ""
+    # Inbound: another network reaches this address, on every port.
+    reachable_from_networks_any_port: list[str] = field(default_factory=list)
+
+    def breaks_a_rule(self) -> bool:
+        return bool(
+            self.reaches_networks_any_port
+            or self.reaches_internet
+            or self.reachable_from_internet
+            or self.reachable_from_networks_any_port
+        )
 
 
 @dataclass(frozen=True)
@@ -105,7 +128,8 @@ def subjects(config: ParsedConfig) -> list[Subject]:
 
     for zone_id, label, addresses in _zone_sets(config, resolver):
         kind = "tunnel" if zone_id.startswith("tunnel-") else "interface"
-        out.append(Subject(id=zone_id, label=label, kind=kind, cidrs=addresses.to_cidrs()))
+        cidrs = addresses.to_cidrs()
+        out.append(Subject(id=zone_id, label=label, kind=kind, cidrs=cidrs, members=cidrs))
 
     for alias in config.aliases:
         if alias.type not in {"host", "network"}:
@@ -122,8 +146,39 @@ def subjects(config: ParsedConfig) -> list[Subject]:
                 label=alias.name,
                 kind="alias",
                 cidrs=addresses.to_cidrs(),
+                members=_alias_members(resolver, alias),
             )
         )
+    return out
+
+
+def _sits_inside(member: IpSet, zone: IpSet) -> bool:
+    """Whether an address belongs to a network.
+
+    Traffic between two addresses on the same segment never reaches the
+    firewall, so a host is not "reaching" or "reachable from" its own network
+    however wide the rules are. Counting it turns every allow-any rule into a
+    finding about the subnet the host already sits in.
+    """
+    return member.subtract(zone).is_empty()
+
+
+def _alias_members(resolver: Resolver, alias) -> list[str]:
+    """Each declared entry of an alias, resolved but kept separate.
+
+    Resolving the alias as a whole and reading the result back merges adjacent
+    hosts, so a list of /32 users comes out as a handful of wider prefixes and
+    the per-address questions can no longer be asked.
+    """
+    out: list[str] = []
+    for item in alias.items:
+        try:
+            found, _ = resolver.addresses(AddrSpec(network=item), FAMILY)
+        except AliasCycleError:
+            continue
+        for cidr in found.to_cidrs():
+            if cidr not in out:
+                out.append(cidr)
     return out
 
 
@@ -156,74 +211,77 @@ def _region_addresses(region) -> IpSet:
 
 
 def exposures(config: ParsedConfig) -> list[Exposure]:
+    """Every address that breaks one of the four rules, one row each."""
     resolver = Resolver(config)
     zones = _zone_sets(config, resolver)
     internal = _internal_space(zones)
     internet = internal.complement()
     internet_probe = _probe(internet)
-
-    # Computed once and reused: explore_from is the expensive part.
-    allowed_by_zone = {
-        zone_id: _allowed_from(config, probe)
-        for zone_id, _, addresses in zones
-        if (probe := _probe(addresses))
-    }
     allowed_from_internet = _allowed_from(config, internet_probe) if internet_probe else []
+
+    # Keyed by the address it was run from, because the same address turns up in
+    # an interface and in an alias that names a host inside it.
+    outbound_cache: dict[str, list] = {}
+
+    def allowed_from(probe: str) -> list:
+        if probe not in outbound_cache:
+            outbound_cache[probe] = _allowed_from(config, probe)
+        return outbound_cache[probe]
 
     out: list[Exposure] = []
     for subject in subjects(config):
-        target = _subject_set(subject)
-        own_probe = _probe(target)
-        outbound = allowed_by_zone.get(subject.id) or (
-            _allowed_from(config, own_probe) if own_probe else []
-        )
+        for cidr in subject.members:
+            member = IpSet.from_cidr(cidr)
+            probe = _probe(member)
+            if probe is None:
+                continue
 
-        wide_open: list[str] = []
-        internet_ports = PortSet.empty()
-        for region, covered in outbound:
-            ports = PortSet.parse(region.ports)
-            every_port = ports.items == [(0, MAX_PORT)]
+            reaches_networks: list[str] = []
+            internet_ports = PortSet.empty()
+            for region, covered in allowed_from(probe):
+                ports = PortSet.parse(region.ports)
+                if ports.items == [(0, MAX_PORT)]:
+                    for zone_id, label, addresses in zones:
+                        if zone_id == subject.id or _sits_inside(member, addresses):
+                            continue
+                        # The whole of another network, on the whole port range.
+                        if addresses.subtract(covered).is_empty() and label not in reaches_networks:
+                            reaches_networks.append(label)
+                if not covered.intersect(internet).is_empty():
+                    internet_ports = internet_ports.union(ports)
+
+            inbound_internet = PortSet.empty()
+            for region, covered in allowed_from_internet:
+                if not covered.intersect(member).is_empty():
+                    inbound_internet = inbound_internet.union(PortSet.parse(region.ports))
+
+            reachable_from: list[str] = []
             for zone_id, label, addresses in zones:
-                if zone_id == subject.id or covered.intersect(addresses).is_empty():
+                if zone_id == subject.id or _sits_inside(member, addresses):
                     continue
-                if every_port and label not in wide_open:
-                    wide_open.append(label)
-            if not covered.intersect(internet).is_empty():
-                internet_ports = internet_ports.union(ports)
-
-        inbound_internet = PortSet.empty()
-        for region, covered in allowed_from_internet:
-            if not covered.intersect(target).is_empty():
-                inbound_internet = inbound_internet.union(PortSet.parse(region.ports))
-
-        reaching_zones: set[str] = set()
-        inbound_internal = PortSet.empty()
-        for zone_id, _, _ in zones:
-            for region, covered in allowed_by_zone.get(zone_id, []):
-                if covered.intersect(target).is_empty():
+                zone_probe = _probe(addresses)
+                if zone_probe is None:
                     continue
-                reaching_zones.add(zone_id)
-                inbound_internal = inbound_internal.union(PortSet.parse(region.ports))
+                for region, covered in allowed_from(zone_probe):
+                    if PortSet.parse(region.ports).items != [(0, MAX_PORT)]:
+                        continue
+                    if member.subtract(covered).is_empty() and label not in reachable_from:
+                        reachable_from.append(label)
 
-        # "From any internal source" means every zone other than the subject's
-        # own can get in. The internet is deliberately not one of them.
-        others = {zone_id for zone_id, _, _ in zones if zone_id != subject.id}
-        out.append(
-            Exposure(
+            entry = Exposure(
                 subject=subject,
-                reaches_other_subnets_any_port=wide_open,
+                cidr=cidr,
+                reaches_networks_any_port=reaches_networks,
                 reaches_internet=not internet_ports.is_empty(),
                 internet_ports=internet_ports.to_spec() if not internet_ports.is_empty() else "",
-                reachable_from_all_internal=bool(others) and others <= reaching_zones,
-                inbound_internal_ports=(
-                    inbound_internal.to_spec() if not inbound_internal.is_empty() else ""
-                ),
                 reachable_from_internet=not inbound_internet.is_empty(),
                 inbound_internet_ports=(
                     inbound_internet.to_spec() if not inbound_internet.is_empty() else ""
                 ),
+                reachable_from_networks_any_port=reachable_from,
             )
-        )
+            if entry.breaks_a_rule():
+                out.append(entry)
     return out
 
 

@@ -48,6 +48,15 @@ class Workspace:
         self.config_id = config_id
         self.firewalls: list[Firewall] = []
         self.filenames: dict[str, str] = {}
+        # A parsed config never changes, so anything derived from it can be kept
+        # for as long as the workspace lives. Adding a firewall is the one event
+        # that invalidates it.
+        self._derived: dict[str, object] = {}
+
+    def cached(self, key: str, build):
+        if key not in self._derived:
+            self._derived[key] = build()
+        return self._derived[key]
 
     def add(self, config: ParsedConfig, filename: str) -> Firewall:
         firewall = Firewall(
@@ -59,6 +68,7 @@ class Workspace:
         )
         self.firewalls.append(firewall)
         self.filenames[firewall.id] = filename
+        self._derived.clear()
         return firewall
 
     @property
