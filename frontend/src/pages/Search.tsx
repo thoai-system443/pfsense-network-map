@@ -41,9 +41,7 @@ export function SearchPage() {
   const [params] = useSearchParams();
   const [tab, setTab] = useState<Tab>("path");
   const [source, setSource] = useState(params.get("source") ?? "");
-  const [destination, setDestination] = useState(
-    params.get("destination") ?? "",
-  );
+  const [destination, setDestination] = useState(params.get("destination") ?? "");
   const [port, setPort] = useState("");
   const [protocol, setProtocol] = useState("tcp");
 
@@ -58,41 +56,24 @@ export function SearchPage() {
   });
   const check = useMutation<CheckResponse, Error>({
     mutationFn: () =>
-      queryCheck(configId, {
-        source,
-        destination,
-        port: port ? Number(port) : null,
-        protocol,
-      }),
+      queryCheck(configId, { source, destination, port: port ? Number(port) : null, protocol }),
   });
   const from = useMutation<Region[], Error>({
     mutationFn: () => queryFrom(configId, { source, protocol }),
   });
   const to = useMutation<SourceRegion[], Error>({
     mutationFn: () =>
-      queryTo(configId, {
-        destination,
-        port: port ? Number(port) : null,
-        protocol,
-      }),
+      queryTo(configId, { destination, port: port ? Number(port) : null, protocol }),
   });
 
-  const active =
-    tab === "path"
-      ? path
-      : tab === "check"
-        ? check
-        : tab === "from"
-          ? from
-          : to;
+  const active = tab === "path" ? path : tab === "check" ? check : tab === "from" ? from : to;
 
   return (
     <div className="space-y-5">
       <div>
         <h1 className="text-xl font-semibold tracking-tight">Search</h1>
         <p className="text-sm text-muted-foreground">
-          Every field accepts an IP, a CIDR, an alias name, or an interface
-          name.
+          Every field accepts an IP, a CIDR, an alias name, or an interface name.
         </p>
       </div>
 
@@ -141,13 +122,7 @@ export function SearchPage() {
           />
         )}
         {tab !== "from" && (
-          <Field
-            id="port"
-            label="Port"
-            value={port}
-            onChange={setPort}
-            placeholder="443"
-          />
+          <Field id="port" label="Port" value={port} onChange={setPort} placeholder="443" />
         )}
         <label className="text-sm" htmlFor="search-protocol">
           <span className="block pb-1 text-muted-foreground">Protocol</span>
@@ -228,14 +203,12 @@ function Field({
 function PathOutcome({ result }: { result: PathResult }) {
   return (
     <section className="space-y-3 rounded-lg border bg-card p-4">
-      <p
-        className={`text-2xl font-semibold uppercase ${VERDICT_STYLE[result.verdict] ?? ""}`}
-      >
+      <p className={`text-2xl font-semibold uppercase ${VERDICT_STYLE[result.verdict] ?? ""}`}>
         {result.verdict}
       </p>
       <p className="text-sm text-muted-foreground">
-        A packet passes only if every firewall on the way allows it. The first
-        one that refuses ends the walk.
+        A packet passes only if every firewall on the way allows it. The first one that refuses
+        ends the walk.
       </p>
       <ol className="space-y-2">
         {result.hops.map((hop, index) => (
@@ -247,9 +220,7 @@ function PathOutcome({ result }: { result: PathResult }) {
                 {hop.out_interface ? ` → out ${hop.out_interface}` : ""}
                 {hop.next_hop ? ` → ${hop.next_hop}` : ""}
               </span>
-              <span
-                className={`font-medium uppercase ${VERDICT_STYLE[hop.verdict] ?? ""}`}
-              >
+              <span className={`font-medium uppercase ${VERDICT_STYLE[hop.verdict] ?? ""}`}>
                 {hop.verdict}
               </span>
             </div>
@@ -273,8 +244,8 @@ function PathOutcome({ result }: { result: PathResult }) {
       </ol>
       {result.stopped_reason && (
         <p className="text-sm text-accent">
-          The walk stopped early: {result.stopped_reason}. Anything past that
-          point is unknown to this tool.
+          The walk stopped early: {result.stopped_reason}. Anything past that point is unknown to
+          this tool.
         </p>
       )}
     </section>
@@ -284,8 +255,7 @@ function PathOutcome({ result }: { result: PathResult }) {
 function Unresolved() {
   return (
     <p className="text-sm text-accent">
-      This result involves an alias that could not be resolved offline, so it
-      may be incomplete.
+      This result involves an alias that could not be resolved offline, so it may be incomplete.
     </p>
   );
 }
@@ -295,32 +265,25 @@ function ProtocolBreakdown({ result }: { result: CheckResult }) {
   return (
     <div className="space-y-1">
       <p className="text-sm text-muted-foreground">
-        &quot;any&quot; is not one question. Each protocol was checked on its
-        own:
+        &quot;any&quot; is not one question. Each protocol was checked on its own:
       </p>
       <ul className="flex flex-wrap gap-2">
-        {PROTOCOLS_IN_ANY.filter((name) => result.per_protocol?.[name]).map(
-          (name) => {
-            const verdict = result.per_protocol![name];
-            const rule = result.per_protocol_rules?.[name];
-            return (
-              <li key={name} className="rounded-md border px-3 py-1.5 text-sm">
-                <span className="tabular font-medium">{name}</span>{" "}
-                <span
-                  className={`font-medium uppercase ${VERDICT_STYLE[verdict]}`}
-                >
-                  {verdict}
+        {PROTOCOLS_IN_ANY.filter((name) => result.per_protocol?.[name]).map((name) => {
+          const verdict = result.per_protocol![name];
+          const rule = result.per_protocol_rules?.[name];
+          return (
+            <li key={name} className="rounded-md border px-3 py-1.5 text-sm">
+              <span className="tabular font-medium">{name}</span>{" "}
+              <span className={`font-medium uppercase ${VERDICT_STYLE[verdict]}`}>{verdict}</span>
+              {rule && (
+                <span className="text-muted-foreground">
+                  {" "}
+                  — #{rule.seq} {rule.descr || "(no description)"}
                 </span>
-                {rule && (
-                  <span className="text-muted-foreground">
-                    {" "}
-                    — #{rule.seq} {rule.descr || "(no description)"}
-                  </span>
-                )}
-              </li>
-            );
-          },
-        )}
+              )}
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
@@ -329,9 +292,8 @@ function ProtocolBreakdown({ result }: { result: CheckResult }) {
 function PartialNotice() {
   return (
     <p className="rounded-md border border-accent bg-accent/10 p-3 text-sm">
-      <span className="font-medium">Partial, not allowed.</span> Some protocols
-      get through and others do not — read the breakdown below rather than
-      treating this as a pass.
+      <span className="font-medium">Partial, not allowed.</span> Some protocols get through and
+      others do not — read the breakdown below rather than treating this as a pass.
     </p>
   );
 }
@@ -339,16 +301,13 @@ function PartialNotice() {
 function CheckOutcome({ result }: { result: CheckResult }) {
   return (
     <section className="space-y-3 rounded-lg border bg-card p-4">
-      <p
-        className={`text-2xl font-semibold uppercase ${VERDICT_STYLE[result.verdict]}`}
-      >
+      <p className={`text-2xl font-semibold uppercase ${VERDICT_STYLE[result.verdict]}`}>
         {result.verdict}
       </p>
       {result.verdict === "partial" && <PartialNotice />}
       <ProtocolBreakdown result={result} />
       <p className="text-sm text-muted-foreground">
-        Entered on interface{" "}
-        <span className="tabular">{result.in_interface}</span>
+        Entered on interface <span className="tabular">{result.in_interface}</span>
       </p>
       {result.translated_address && (
         <p className="text-sm">
@@ -376,12 +335,8 @@ function CheckOutcome({ result }: { result: CheckResult }) {
           </summary>
           <ol className="mt-2 space-y-1">
             {result.trace.map((entry, index) => (
-              <li
-                key={index}
-                className={entry.matched ? "" : "text-muted-foreground"}
-              >
-                #{entry.rule.seq} {entry.rule.descr || "(no description)"} —{" "}
-                {entry.reason}
+              <li key={index} className={entry.matched ? "" : "text-muted-foreground"}>
+                #{entry.rule.seq} {entry.rule.descr || "(no description)"} — {entry.reason}
               </li>
             ))}
           </ol>
@@ -391,23 +346,14 @@ function CheckOutcome({ result }: { result: CheckResult }) {
   );
 }
 
-function ResultTable({
-  headers,
-  children,
-}: {
-  headers: string[];
-  children: React.ReactNode;
-}) {
+function ResultTable({ headers, children }: { headers: string[]; children: React.ReactNode }) {
   return (
     <div className="overflow-x-auto rounded-lg border bg-card">
       <table className="w-full text-left text-sm">
         <thead>
           <tr className="border-b">
             {headers.map((header) => (
-              <th
-                key={header}
-                className="px-4 py-2 font-medium text-muted-foreground"
-              >
+              <th key={header} className="px-4 py-2 font-medium text-muted-foreground">
                 {header}
               </th>
             ))}
@@ -421,22 +367,16 @@ function ResultTable({
 
 function RegionTable({ regions }: { regions: Region[] }) {
   return (
-    <ResultTable
-      headers={["Destinations", "Ports", "Protocol", "Verdict", "Decided by"]}
-    >
+    <ResultTable headers={["Destinations", "Ports", "Protocol", "Verdict", "Decided by"]}>
       {regions.map((region, index) => (
         <tr key={index} className="align-top">
           <td className="tabular px-4 py-2">{region.addresses.join(", ")}</td>
           <td className="tabular px-4 py-2">{region.ports}</td>
           <td className="tabular px-4 py-2">{region.protocol ?? "all"}</td>
-          <td
-            className={`px-4 py-2 font-medium ${VERDICT_STYLE[region.verdict]}`}
-          >
+          <td className={`px-4 py-2 font-medium ${VERDICT_STYLE[region.verdict]}`}>
             {region.verdict}
           </td>
-          <td className="px-4 py-2">
-            {region.decided_by?.descr || "default deny"}
-          </td>
+          <td className="px-4 py-2">{region.decided_by?.descr || "default deny"}</td>
         </tr>
       ))}
     </ResultTable>
@@ -445,22 +385,16 @@ function RegionTable({ regions }: { regions: Region[] }) {
 
 function SourceTable({ regions }: { regions: SourceRegion[] }) {
   return (
-    <ResultTable
-      headers={["Interface", "Sources", "Protocol", "Verdict", "Decided by"]}
-    >
+    <ResultTable headers={["Interface", "Sources", "Protocol", "Verdict", "Decided by"]}>
       {regions.map((region, index) => (
         <tr key={index} className="align-top">
           <td className="tabular px-4 py-2">{region.in_interface}</td>
           <td className="tabular px-4 py-2">{region.addresses.join(", ")}</td>
           <td className="tabular px-4 py-2">{region.protocol ?? "all"}</td>
-          <td
-            className={`px-4 py-2 font-medium ${VERDICT_STYLE[region.verdict]}`}
-          >
+          <td className={`px-4 py-2 font-medium ${VERDICT_STYLE[region.verdict]}`}>
             {region.verdict}
           </td>
-          <td className="px-4 py-2">
-            {region.decided_by?.descr || "default deny"}
-          </td>
+          <td className="px-4 py-2">{region.decided_by?.descr || "default deny"}</td>
         </tr>
       ))}
     </ResultTable>
@@ -469,11 +403,7 @@ function SourceTable({ regions }: { regions: SourceRegion[] }) {
 
 function RegionVerdictCell({ verdict }: { verdict: string }) {
   return (
-    <td
-      className={`px-4 py-2 font-medium uppercase ${VERDICT_STYLE[verdict] ?? ""}`}
-    >
-      {verdict}
-    </td>
+    <td className={`px-4 py-2 font-medium uppercase ${VERDICT_STYLE[verdict] ?? ""}`}>{verdict}</td>
   );
 }
 
@@ -481,27 +411,22 @@ function CheckRegionTable({ result }: { result: CheckRegions }) {
   return (
     <section className="space-y-3">
       <p className="text-sm text-muted-foreground">
-        A subnet is a set of addresses, and the ruleset can treat parts of it
-        differently. Every part of what you asked about appears below with its
-        own verdict. Entered on interface{" "}
+        A subnet is a set of addresses, and the ruleset can treat parts of it differently. Every
+        part of what you asked about appears below with its own verdict. Entered on interface{" "}
         <span className="tabular">{result.in_interface}</span>.
       </p>
-      <ResultTable
-        headers={["Sources", "Destinations", "Verdict", "Decided by", "NAT"]}
-      >
+      <ResultTable headers={["Sources", "Destinations", "Verdict", "Decided by", "NAT"]}>
         {result.regions.map((region, index) => (
           <tr key={index} className="align-top">
             <td className="tabular px-4 py-2">{region.sources.join(", ")}</td>
-            <td className="tabular px-4 py-2">
-              {region.destinations.join(", ")}
-            </td>
+            <td className="tabular px-4 py-2">{region.destinations.join(", ")}</td>
             <RegionVerdictCell verdict={region.verdict} />
-            <td className="px-4 py-2">
-              {region.decided_by?.descr || "default deny"}
-            </td>
+            <td className="px-4 py-2">{region.decided_by?.descr || "default deny"}</td>
             <td className="tabular px-4 py-2 text-muted-foreground">
               {region.translated_address
-                ? `${region.translated_address}${region.translated_port ? `:${region.translated_port}` : ""}`
+                ? `${region.translated_address}${
+                    region.translated_port ? `:${region.translated_port}` : ""
+                  }`
                 : "—"}
             </td>
           </tr>
@@ -516,18 +441,14 @@ function PathRegionTable({ result }: { result: PathRegions }) {
   return (
     <section className="space-y-3">
       <p className="text-sm text-muted-foreground">
-        Hosts inside one subnet can enter at different firewalls and be refused
-        at different hops, so each part of the space is walked separately.
+        Hosts inside one subnet can enter at different firewalls and be refused at different hops,
+        so each part of the space is walked separately.
       </p>
       <ResultTable headers={["Sources", "Destinations", "Verdict", "Path"]}>
         {result.regions.map((region, index) => (
           <tr key={index} className="align-top">
-            <td className="tabular px-4 py-2">
-              {region.sources.join(", ") || "—"}
-            </td>
-            <td className="tabular px-4 py-2">
-              {region.destinations.join(", ") || "—"}
-            </td>
+            <td className="tabular px-4 py-2">{region.sources.join(", ") || "—"}</td>
+            <td className="tabular px-4 py-2">{region.destinations.join(", ") || "—"}</td>
             <RegionVerdictCell verdict={region.verdict} />
             <td className="px-4 py-2">
               <span className="tabular">
@@ -540,17 +461,12 @@ function PathRegionTable({ result }: { result: PathRegions }) {
                   NAT →{" "}
                   {region.hops
                     .filter((hop) => hop.translated_address)
-                    .map(
-                      (hop) =>
-                        `${hop.translated_address}:${hop.translated_port}`,
-                    )
+                    .map((hop) => `${hop.translated_address}:${hop.translated_port}`)
                     .join(", ")}
                 </span>
               )}
               {region.stopped_reason && (
-                <span className="block text-accent">
-                  Stopped: {region.stopped_reason}
-                </span>
+                <span className="block text-accent">Stopped: {region.stopped_reason}</span>
               )}
             </td>
           </tr>
