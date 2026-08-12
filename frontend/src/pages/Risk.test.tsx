@@ -45,11 +45,6 @@ const report: RiskReport = {
       inbound_internal_ports: "",
       reachable_from_internet: false,
       inbound_internet_ports: "",
-      wide_open_sources: [],
-      internet_sources: [],
-      inbound_internal_targets: [],
-      inbound_internet_targets: [],
-      approximate: false,
     },
     {
       firewall: "fw-edge",
@@ -61,11 +56,6 @@ const report: RiskReport = {
       inbound_internal_ports: "",
       reachable_from_internet: true,
       inbound_internet_ports: "8443",
-      wide_open_sources: [],
-      internet_sources: [],
-      inbound_internal_targets: [],
-      inbound_internet_targets: [],
-      approximate: false,
     },
     {
       firewall: "fw-edge",
@@ -77,11 +67,6 @@ const report: RiskReport = {
       inbound_internal_ports: "",
       reachable_from_internet: false,
       inbound_internet_ports: "",
-      wide_open_sources: [],
-      internet_sources: [],
-      inbound_internal_targets: [],
-      inbound_internet_targets: [],
-      approximate: false,
     },
   ],
   deny_all: [
@@ -269,17 +254,12 @@ describe("exporting exposure by object", () => {
       "interface",
       "192.168.1.0/24",
       "DMZ",
-      "all",
       "yes",
       "443",
-      "all",
       "no",
       "",
-      "",
       "no",
       "",
-      "",
-      "no",
     ]);
   });
 
@@ -288,8 +268,8 @@ describe("exporting exposure by object", () => {
     const [row] = exposureRows([
       { ...report.exposures[2], internet_ports: "443", reaches_internet: false },
     ]);
-    expect(row[6]).toBe("no");
-    expect(row[7]).toBe("");
+    expect(row[5]).toBe("no");
+    expect(row[6]).toBe("");
   });
 
   it("exports the rows shown and leaves out the objects with nothing flagged", async () => {
@@ -313,40 +293,5 @@ describe("exporting exposure by object", () => {
     expect(captured).toContain("DB_SERVER");
     expect(captured).not.toContain("GUEST");
     vi.unstubAllGlobals();
-  });
-});
-
-describe("a finding that covers only part of an object", () => {
-  it("names the addresses instead of implying the whole subnet", async () => {
-    vi.spyOn(api, "getRiskReport").mockResolvedValue({
-      ...report,
-      exposures: [
-        {
-          ...report.exposures[0],
-          subject: {
-            id: "lan",
-            label: "LAN",
-            kind: "interface",
-            cidrs: ["10.0.0.0/24"],
-          },
-          reaches_other_subnets_any_port: [],
-          reaches_internet: true,
-          internet_ports: "443",
-          internet_sources: ["10.0.0.2/32"],
-        },
-      ],
-    });
-    renderPage();
-
-    // Without this the row reads as "all 254 addresses reach the internet".
-    expect(await screen.findByText(/only 10\.0\.0\.2\/32/)).toBeInTheDocument();
-  });
-
-  it("says nothing extra when the finding covers the whole object", async () => {
-    vi.spyOn(api, "getRiskReport").mockResolvedValue(report);
-    renderPage();
-
-    expect(await screen.findByText("LAN")).toBeInTheDocument();
-    expect(screen.queryByText(/^only /)).not.toBeInTheDocument();
   });
 });

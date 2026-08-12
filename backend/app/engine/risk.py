@@ -38,16 +38,6 @@ class Exposure:
     inbound_internal_ports: str = ""
     reachable_from_internet: bool = False
     inbound_internet_ports: str = ""
-    # Which part of the object each finding is actually about. Empty means the
-    # whole object, so a row only carries addresses when it would otherwise
-    # read as "all of this subnet", which is the misreading worth preventing.
-    wide_open_sources: list[str] = field(default_factory=list)
-    internet_sources: list[str] = field(default_factory=list)
-    inbound_internal_targets: list[str] = field(default_factory=list)
-    inbound_internet_targets: list[str] = field(default_factory=list)
-    # The object had more distinct behaviours than the analysis split apart, so
-    # these findings may be attributed more broadly than the ruleset warrants.
-    approximate: bool = False
 
 
 @dataclass(frozen=True)
@@ -73,65 +63,6 @@ def _probe(addresses: IpSet) -> str | None:
         return None
     lo, hi = addresses.items[0]
     return str(ipaddress.ip_address(lo + 1 if lo < hi else lo))
-
-
-# One explore_from per piece, ~0.2ms each, so a few hundred is cheap. The cap
-# only exists so a pathological config cannot run away; hitting it is reported
-# rather than quietly rounding the answer off.
-MAX_PIECES = 512
-
-
-def _pieces(config: ParsedConfig, resolver: Resolver, addresses: IpSet) -> tuple[list[IpSet], bool]:
-    """Split an address set where the ruleset stops treating it as one thing.
-
-    Running the engine from one representative address and attributing the
-    answer to the whole set is wrong in both directions: it invents access for
-    addresses that have none, and hides a single exposed host inside a quiet
-    subnet. Splitting first fixes both, because every address inside a piece
-    provably behaves the same — the piece is on one interface, and every rule
-    either covers all of it or none of it.
-    """
-    pieces = [addresses]
-
-    splitters: list[IpSet] = [subnet for _, _, subnet in _zone_sets(config, resolver)]
-    for rule in config.rules:
-        if rule.disabled:
-            continue
-        try:
-            source, _ = resolver.addresses(rule.source, FAMILY)
-        except AliasCycleError:
-            continue
-        if not source.is_empty():
-            splitters.append(source)
-
-    capped = False
-    for splitter in splitters:
-        if len(pieces) >= MAX_PIECES:
-            capped = True
-            break
-        cut: list[IpSet] = []
-        for piece in pieces:
-            inside = piece.intersect(splitter)
-            # A rule that covers all of a piece, or none of it, tells the piece
-            # apart from nothing and is skipped.
-            if inside.is_empty() or inside.items == piece.items:
-                cut.append(piece)
-                continue
-            cut.append(inside)
-            cut.append(piece.subtract(splitter))
-        pieces = cut
-
-    return pieces, capped
-
-
-def _allowed_from_set(
-    config: ParsedConfig, resolver: Resolver, addresses: IpSet
-) -> tuple[list[tuple[IpSet, list]], bool]:
-    """(piece, allowed regions from it) for every piece, and whether it was capped."""
-    pieces, capped = _pieces(config, resolver, addresses)
-    return [
-        (piece, _allowed_from(config, probe)) for piece in pieces if (probe := _probe(piece))
-    ], capped
 
 
 def _zone_sets(config: ParsedConfig, resolver: Resolver) -> list[tuple[str, str, IpSet]]:
@@ -233,57 +164,46 @@ def exposures(config: ParsedConfig) -> list[Exposure]:
 
     # Computed once and reused: explore_from is the expensive part.
     allowed_by_zone = {
-        zone_id: _allowed_from_set(config, resolver, addresses) for zone_id, _, addresses in zones
+        zone_id: _allowed_from(config, probe)
+        for zone_id, _, addresses in zones
+        if (probe := _probe(addresses))
     }
-    zone_capped = any(capped for _, capped in allowed_by_zone.values())
     allowed_from_internet = _allowed_from(config, internet_probe) if internet_probe else []
 
     out: list[Exposure] = []
     for subject in subjects(config):
         target = _subject_set(subject)
-        outbound, capped = allowed_by_zone.get(subject.id) or _allowed_from_set(
-            config, resolver, target
+        own_probe = _probe(target)
+        outbound = allowed_by_zone.get(subject.id) or (
+            _allowed_from(config, own_probe) if own_probe else []
         )
 
         wide_open: list[str] = []
-        wide_open_sources = IpSet.empty(FAMILY)
         internet_ports = PortSet.empty()
-        internet_sources = IpSet.empty(FAMILY)
-        for piece, regions in outbound:
-            for region, covered in regions:
-                ports = PortSet.parse(region.ports)
-                every_port = ports.items == [(0, MAX_PORT)]
-                for zone_id, label, addresses in zones:
-                    if zone_id == subject.id or covered.intersect(addresses).is_empty():
-                        continue
-                    if every_port:
-                        wide_open_sources = wide_open_sources.union(piece)
-                        if label not in wide_open:
-                            wide_open.append(label)
-                if not covered.intersect(internet).is_empty():
-                    internet_ports = internet_ports.union(ports)
-                    internet_sources = internet_sources.union(piece)
+        for region, covered in outbound:
+            ports = PortSet.parse(region.ports)
+            every_port = ports.items == [(0, MAX_PORT)]
+            for zone_id, label, addresses in zones:
+                if zone_id == subject.id or covered.intersect(addresses).is_empty():
+                    continue
+                if every_port and label not in wide_open:
+                    wide_open.append(label)
+            if not covered.intersect(internet).is_empty():
+                internet_ports = internet_ports.union(ports)
 
         inbound_internet = PortSet.empty()
-        inbound_internet_targets = IpSet.empty(FAMILY)
         for region, covered in allowed_from_internet:
-            reached = covered.intersect(target)
-            if not reached.is_empty():
+            if not covered.intersect(target).is_empty():
                 inbound_internet = inbound_internet.union(PortSet.parse(region.ports))
-                inbound_internet_targets = inbound_internet_targets.union(reached)
 
         reaching_zones: set[str] = set()
         inbound_internal = PortSet.empty()
-        inbound_internal_targets = IpSet.empty(FAMILY)
         for zone_id, _, _ in zones:
-            for _, regions in allowed_by_zone.get(zone_id, ([], False))[0]:
-                for region, covered in regions:
-                    reached = covered.intersect(target)
-                    if reached.is_empty():
-                        continue
-                    reaching_zones.add(zone_id)
-                    inbound_internal = inbound_internal.union(PortSet.parse(region.ports))
-                    inbound_internal_targets = inbound_internal_targets.union(reached)
+            for region, covered in allowed_by_zone.get(zone_id, []):
+                if covered.intersect(target).is_empty():
+                    continue
+                reaching_zones.add(zone_id)
+                inbound_internal = inbound_internal.union(PortSet.parse(region.ports))
 
         # "From any internal source" means every zone other than the subject's
         # own can get in. The internet is deliberately not one of them.
@@ -302,21 +222,9 @@ def exposures(config: ParsedConfig) -> list[Exposure]:
                 inbound_internet_ports=(
                     inbound_internet.to_spec() if not inbound_internet.is_empty() else ""
                 ),
-                wide_open_sources=_subset_of(wide_open_sources, target),
-                internet_sources=_subset_of(internet_sources, target),
-                inbound_internal_targets=_subset_of(inbound_internal_targets, target),
-                inbound_internet_targets=_subset_of(inbound_internet_targets, target),
-                approximate=capped or zone_capped,
             )
         )
     return out
-
-
-def _subset_of(part: IpSet, whole: IpSet) -> list[str]:
-    """The addresses a finding covers, or nothing when it covers the object."""
-    if part.is_empty() or part.items == whole.items:
-        return []
-    return part.to_cidrs()
 
 
 def port_reachability(

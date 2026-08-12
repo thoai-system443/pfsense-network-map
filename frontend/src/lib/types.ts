@@ -264,13 +264,6 @@ export interface Exposure {
   inbound_internal_ports: string;
   reachable_from_internet: boolean;
   inbound_internet_ports: string;
-  /** Which part of the object the finding covers. Empty means all of it. */
-  wide_open_sources: string[];
-  internet_sources: string[];
-  inbound_internal_targets: string[];
-  inbound_internet_targets: string[];
-  /** The object holds more distinct behaviours than the analysis split apart. */
-  approximate: boolean;
 }
 
 export interface PortAccess {
