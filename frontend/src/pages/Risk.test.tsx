@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import * as api from "@/lib/api";
 import type { RiskReport } from "@/lib/types";
 
-import { RiskPage } from "./Risk";
+import { RiskPage, exposureRows } from "./Risk";
 
 function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -226,5 +226,56 @@ describe("the hide-outbound switch", () => {
     expect(
       await screen.findByText(/ignoring traffic out to the internet/i),
     ).toBeInTheDocument();
+  });
+});
+
+describe("exporting exposure by object", () => {
+  it("puts each flag and its ports in their own column", () => {
+    const [lan] = exposureRows([report.exposures[0]]);
+    expect(lan).toEqual([
+      "fw-edge",
+      "LAN",
+      "interface",
+      "192.168.1.0/24",
+      "DMZ",
+      "yes",
+      "443",
+      "no",
+      "",
+      "no",
+      "",
+    ]);
+  });
+
+  it("leaves the ports column empty when the flag is off", () => {
+    // internet_ports can carry a leftover value; a "no" row must not imply one.
+    const [row] = exposureRows([
+      { ...report.exposures[2], internet_ports: "443", reaches_internet: false },
+    ]);
+    expect(row[5]).toBe("no");
+    expect(row[6]).toBe("");
+  });
+
+  it("exports the rows shown and leaves out the objects with nothing flagged", async () => {
+    vi.spyOn(api, "getRiskReport").mockResolvedValue(report);
+    // jsdom's Blob has no text(), so capture what downloadCsv puts into it.
+    let captured = "";
+    class CapturingBlob {
+      constructor(parts: string[]) {
+        captured = parts.join("");
+      }
+    }
+    vi.stubGlobal("Blob", CapturingBlob);
+    vi.stubGlobal("URL", { ...URL, createObjectURL: () => "blob:stub", revokeObjectURL: () => {} });
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+
+    renderPage();
+    await userEvent.click(await screen.findByRole("button", { name: /export csv/i }));
+
+    expect(captured.startsWith("\uFEFF")).toBe(true);
+    expect(captured).toContain("LAN");
+    expect(captured).toContain("DB_SERVER");
+    expect(captured).not.toContain("GUEST");
+    vi.unstubAllGlobals();
   });
 });

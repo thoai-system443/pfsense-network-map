@@ -2,6 +2,7 @@
 
 | Version | Date | Changes |
 |---|---|---|
+| 1.8.0 | 2026-08-12 | Risk: xuất "Exposure by object" ra CSV |
 | 1.7.0 | 2026-08-11 | Search: bảng vùng cho subnet, `partial` cho protocol=any, cột Protocol |
 | 1.6.0 | 2026-08-11 | Who reaches a port: thêm ô "Hide traffic out to the internet", mặc định bật |
 | 1.5.0 | 2026-08-10 | Access map: chuột phải để ẩn zone. Bảng Inventory giới hạn 300 dòng |
@@ -130,6 +131,25 @@ hình.
 
 Cột "Protocol" ở tab From/To hiện `all` khi vùng đúng cho mọi giao thức, và hiện
 tên giao thức khi vùng chỉ đúng cho riêng nó.
+
+## Xuất CSV: dữ liệu trong file là của người khác
+
+`src/lib/csv.ts` dùng cho nút Export CSV ở trang Risk. Hai chỗ dễ bỏ sót:
+
+- **CSV injection.** Mô tả interface và tên alias lấy nguyên từ `config.xml` do
+  người dùng nạp lên. Một mô tả bắt đầu bằng `=`, `+`, `-`, `@` sẽ được Excel và
+  Google Sheets **chạy như công thức** khi mở file. `csvField()` chèn một dấu
+  nháy đơn phía trước để vô hiệu hoá.
+- **BOM.** Không có `\uFEFF` ở đầu file thì Excel đọc UTF-8 thành mojibake, một
+  interface đặt tên tiếng Việt sẽ hỏng. `Blob.text()` **tự bỏ** BOM khi decode,
+  nên muốn kiểm chứng phải đọc byte thô qua `arrayBuffer()` — kiểm bằng
+  `text()` sẽ luôn báo là thiếu BOM dù nó có ở đó.
+
+Mỗi cờ được xuất thành **hai** cột: cờ (`yes`/`no`) và cổng. Gộp thành một ô
+`yes (443, 8443)` như trên giao diện thì bảng tính không lọc hay sắp xếp được.
+
+Bảng chỉ hiện object có rủi ro, và file xuất ra đúng những dòng đó — không phải
+toàn bộ object đã kiểm.
 
 ## Hiệu năng: chỗ nặng không nằm ở GPU
 

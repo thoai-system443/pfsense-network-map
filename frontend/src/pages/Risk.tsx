@@ -4,6 +4,7 @@ import { useParams } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 import { getPortAccess, getRiskReport } from "@/lib/api";
+import { downloadCsv, toCsv } from "@/lib/csv";
 import type { Exposure, PortAccess } from "@/lib/types";
 
 /** A dash reads better than an empty cell when the answer is a definite "no". */
@@ -185,6 +186,40 @@ function isExposed(exposure: Exposure): boolean {
   );
 }
 
+const EXPOSURE_HEADERS = [
+  "Firewall",
+  "Object",
+  "Kind",
+  "Addresses",
+  "Reaches other subnets on every port",
+  "Reaches the internet",
+  "Internet ports",
+  "Reachable from every internal zone",
+  "Inbound internal ports",
+  "Reachable from the internet",
+  "Inbound internet ports",
+];
+
+const yesNo = (on: boolean) => (on ? "yes" : "no");
+
+/** The exported rows. Each flag and its ports get a column of their own, because
+ *  a spreadsheet cannot filter or sort on "yes (443, 8443)". */
+export function exposureRows(exposures: Exposure[]): string[][] {
+  return exposures.map((exposure) => [
+    exposure.firewall,
+    exposure.subject.label,
+    exposure.subject.kind,
+    exposure.subject.cidrs.join(", "),
+    exposure.reaches_other_subnets_any_port.join(", "),
+    yesNo(exposure.reaches_internet),
+    exposure.reaches_internet ? exposure.internet_ports : "",
+    yesNo(exposure.reachable_from_all_internal),
+    exposure.reachable_from_all_internal ? exposure.inbound_internal_ports : "",
+    yesNo(exposure.reachable_from_internet),
+    exposure.reachable_from_internet ? exposure.inbound_internet_ports : "",
+  ]);
+}
+
 function ExposureTable({ exposures }: { exposures: Exposure[] }) {
   const exposed = exposures.filter(isExposed);
 
@@ -202,14 +237,25 @@ function ExposureTable({ exposures }: { exposures: Exposure[] }) {
 
   return (
     <section className="space-y-2">
-      <h2 className="font-medium">Exposure by object</h2>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="font-medium">Exposure by object</h2>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() =>
+            downloadCsv("exposure-by-object.csv", toCsv(EXPOSURE_HEADERS, exposureRows(exposed)))
+          }
+        >
+          Export CSV
+        </Button>
+      </div>
       {/*
         The count matters: a short table with no total reads as "the analysis
         found little", when it actually means "most objects came back clean".
       */}
       <p className="text-sm text-muted-foreground">
         {exposed.length} of {exposures.length} objects match at least one criterion. Objects with
-        nothing flagged are left out.
+        nothing flagged are left out, of the table and of the export alike.
       </p>
       <Table
         label="Exposure by object"
