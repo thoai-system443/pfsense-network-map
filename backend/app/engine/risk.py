@@ -33,6 +33,15 @@ class Subject:
 
 
 @dataclass(frozen=True)
+class AllowingRule:
+    """Why a row is on the list, for the debug view."""
+
+    criterion: str
+    detail: str
+    rule: RuleRef | None
+
+
+@dataclass(frozen=True)
 class Exposure:
     """One address or network that breaks at least one of the four rules.
 
@@ -53,6 +62,10 @@ class Exposure:
     inbound_internet_ports: str = ""
     # Inbound: another network reaches this address, on every port.
     reachable_from_networks_any_port: list[str] = field(default_factory=list)
+    # Every rule that grants one of the findings above. Always computed: it is
+    # already in hand from the walk, and a finding nobody can trace back to a
+    # rule is one an operator has to reproduce by hand.
+    allowed_by: list[AllowingRule] = field(default_factory=list)
 
     def breaks_a_rule(self) -> bool:
         return bool(
@@ -152,6 +165,45 @@ def subjects(config: ParsedConfig) -> list[Subject]:
     return out
 
 
+MAX_GROUPS = 512
+
+
+def _rule_groups(config: ParsedConfig, resolver: Resolver, member: IpSet) -> list[IpSet]:
+    """Split a network by the rules that name addresses inside it.
+
+    Working back from the rules beats walking the addresses: a /24 has 254 of
+    them, but only the handful named by a rule can behave differently from their
+    neighbours. Carving at those boundaries leaves groups whose members are
+    provably alike, so one probe answers for a whole group.
+
+    A network no rule singles out comes back as itself, one group.
+    """
+    groups = [member]
+    for rule in config.rules:
+        if rule.disabled:
+            continue
+        if len(groups) >= MAX_GROUPS:
+            break
+        try:
+            source, _ = resolver.addresses(rule.source, FAMILY)
+        except AliasCycleError:
+            continue
+        if source.is_empty():
+            continue
+        cut: list[IpSet] = []
+        for group in groups:
+            inside = group.intersect(source)
+            # A rule covering all of a group, or none of it, tells its addresses
+            # apart from nothing.
+            if inside.is_empty() or inside.items == group.items:
+                cut.append(group)
+                continue
+            cut.append(inside)
+            cut.append(group.subtract(source))
+        groups = cut
+    return groups
+
+
 def _sits_inside(member: IpSet, zone: IpSet) -> bool:
     """Whether an address belongs to a network.
 
@@ -231,58 +283,80 @@ def exposures(config: ParsedConfig) -> list[Exposure]:
     out: list[Exposure] = []
     for subject in subjects(config):
         for cidr in subject.members:
-            member = IpSet.from_cidr(cidr)
-            probe = _probe(member)
-            if probe is None:
-                continue
+            for group in _rule_groups(config, resolver, IpSet.from_cidr(cidr)):
+                entry = _examine(
+                    subject, group, zones, internet, allowed_from, allowed_from_internet
+                )
+                if entry is not None:
+                    out.append(entry)
+    return out
 
-            reaches_networks: list[str] = []
-            internet_ports = PortSet.empty()
-            for region, covered in allowed_from(probe):
-                ports = PortSet.parse(region.ports)
-                if ports.items == [(0, MAX_PORT)]:
-                    for zone_id, label, addresses in zones:
-                        if zone_id == subject.id or _sits_inside(member, addresses):
-                            continue
-                        # The whole of another network, on the whole port range.
-                        if addresses.subtract(covered).is_empty() and label not in reaches_networks:
-                            reaches_networks.append(label)
-                if not covered.intersect(internet).is_empty():
-                    internet_ports = internet_ports.union(ports)
 
-            inbound_internet = PortSet.empty()
-            for region, covered in allowed_from_internet:
-                if not covered.intersect(member).is_empty():
-                    inbound_internet = inbound_internet.union(PortSet.parse(region.ports))
+def _examine(
+    subject: Subject,
+    member: IpSet,
+    zones: list[tuple[str, str, IpSet]],
+    internet: IpSet,
+    allowed_from,
+    allowed_from_internet: list,
+) -> Exposure | None:
+    """The four questions, asked of one group of addresses."""
+    probe = _probe(member)
+    if probe is None:
+        return None
 
-            reachable_from: list[str] = []
+    allowed_by: list[AllowingRule] = []
+
+    reaches_networks: list[str] = []
+    internet_ports = PortSet.empty()
+    for region, covered in allowed_from(probe):
+        ports = PortSet.parse(region.ports)
+        if ports.items == [(0, MAX_PORT)]:
             for zone_id, label, addresses in zones:
                 if zone_id == subject.id or _sits_inside(member, addresses):
                     continue
-                zone_probe = _probe(addresses)
-                if zone_probe is None:
-                    continue
-                for region, covered in allowed_from(zone_probe):
-                    if PortSet.parse(region.ports).items != [(0, MAX_PORT)]:
-                        continue
-                    if member.subtract(covered).is_empty() and label not in reachable_from:
-                        reachable_from.append(label)
+                # The whole of another network, on the whole port range.
+                if addresses.subtract(covered).is_empty() and label not in reaches_networks:
+                    reaches_networks.append(label)
+                    allowed_by.append(AllowingRule("networks", label, region.decided_by))
+        if not covered.intersect(internet).is_empty():
+            internet_ports = internet_ports.union(ports)
+            allowed_by.append(AllowingRule("internet", region.ports, region.decided_by))
 
-            entry = Exposure(
-                subject=subject,
-                cidr=cidr,
-                reaches_networks_any_port=reaches_networks,
-                reaches_internet=not internet_ports.is_empty(),
-                internet_ports=internet_ports.to_spec() if not internet_ports.is_empty() else "",
-                reachable_from_internet=not inbound_internet.is_empty(),
-                inbound_internet_ports=(
-                    inbound_internet.to_spec() if not inbound_internet.is_empty() else ""
-                ),
-                reachable_from_networks_any_port=reachable_from,
-            )
-            if entry.breaks_a_rule():
-                out.append(entry)
-    return out
+    inbound_internet = PortSet.empty()
+    for region, covered in allowed_from_internet:
+        if not covered.intersect(member).is_empty():
+            inbound_internet = inbound_internet.union(PortSet.parse(region.ports))
+            allowed_by.append(AllowingRule("from-internet", region.ports, region.decided_by))
+
+    reachable_from: list[str] = []
+    for zone_id, label, addresses in zones:
+        if zone_id == subject.id or _sits_inside(member, addresses):
+            continue
+        zone_probe = _probe(addresses)
+        if zone_probe is None:
+            continue
+        for region, covered in allowed_from(zone_probe):
+            if PortSet.parse(region.ports).items != [(0, MAX_PORT)]:
+                continue
+            if member.subtract(covered).is_empty() and label not in reachable_from:
+                reachable_from.append(label)
+                allowed_by.append(AllowingRule("from-networks", label, region.decided_by))
+
+    entry = Exposure(
+        subject=subject,
+        cidr=", ".join(member.to_cidrs()),
+        reaches_networks_any_port=reaches_networks,
+        reaches_internet=not internet_ports.is_empty(),
+        internet_ports=internet_ports.to_spec() if not internet_ports.is_empty() else "",
+        reachable_from_internet=not inbound_internet.is_empty(),
+        inbound_internet_ports=(
+            inbound_internet.to_spec() if not inbound_internet.is_empty() else ""
+        ),
+        reachable_from_networks_any_port=reachable_from,
+        allowed_by=allowed_by,
+    )
+    return entry if entry.breaks_a_rule() else None
 
 
 def port_reachability(

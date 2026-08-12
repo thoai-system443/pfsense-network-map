@@ -216,7 +216,49 @@ function Networks({ labels }: { labels: string[] }) {
   return <span className="font-medium text-destructive">{labels.join(", ")}</span>;
 }
 
+const CRITERION_LABEL: Record<string, string> = {
+  networks: "reaches network",
+  internet: "reaches internet on",
+  "from-internet": "reachable from internet on",
+  "from-networks": "reachable from network",
+};
+
+function AllowedBy({ exposure, columns }: { exposure: Exposure; columns: number }) {
+  return (
+    <tr className="bg-muted/40">
+      <td colSpan={columns} className="px-4 py-2 text-sm">
+        {exposure.allowed_by.length === 0 ? (
+          <span className="text-muted-foreground">No rule recorded.</span>
+        ) : (
+          <ul className="space-y-1">
+            {exposure.allowed_by.map((reason, index) => (
+              <li key={index}>
+                <span className="text-muted-foreground">
+                  {CRITERION_LABEL[reason.criterion] ?? reason.criterion}{" "}
+                </span>
+                <span className="tabular">{reason.detail}</span>
+                <span className="text-muted-foreground"> — </span>
+                {reason.rule ? (
+                  <>
+                    <span className="tabular">
+                      #{reason.rule.seq} on {reason.rule.interface}
+                    </span>{" "}
+                    {reason.rule.descr || "(no description)"}
+                  </>
+                ) : (
+                  <span className="text-muted-foreground">no rule matched</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </td>
+    </tr>
+  );
+}
+
 function ExposureTable({ exposures: exposed }: { exposures: Exposure[] }) {
+  const [debug, setDebug] = useState(false);
   if (exposed.length === 0) {
     return (
       <section className="space-y-2">
@@ -247,6 +289,19 @@ function ExposureTable({ exposures: exposed }: { exposures: Exposure[] }) {
           <Button type="button" variant="outline" onClick={() => window.print()}>
             Export PDF
           </Button>
+          <label
+            className="flex cursor-pointer items-center gap-2 text-sm"
+            htmlFor="risk-debug"
+          >
+            <input
+              id="risk-debug"
+              type="checkbox"
+              className="size-4 cursor-pointer accent-[var(--primary)]"
+              checked={debug}
+              onChange={(event) => setDebug(event.target.checked)}
+            />
+            Debug
+          </label>
         </div>
       </div>
       {/*
@@ -271,11 +326,10 @@ function ExposureTable({ exposures: exposed }: { exposures: Exposure[] }) {
           "Reachable from these networks on every port",
         ]}
       >
-        {exposed.map((exposure) => (
-          <tr
-            key={`${exposure.firewall}-${exposure.subject.id}-${exposure.cidr}`}
-            className="align-top"
-          >
+        {exposed.flatMap((exposure) => {
+          const key = `${exposure.firewall}-${exposure.subject.id}-${exposure.cidr}`;
+          return [
+          <tr key={key} className="align-top">
             <td className="px-4 py-2 text-muted-foreground">{exposure.firewall}</td>
             <td className="px-4 py-2 text-muted-foreground">{exposure.subject.label}</td>
             <td className="tabular px-4 py-2 font-medium">{exposure.cidr}</td>
@@ -294,8 +348,10 @@ function ExposureTable({ exposures: exposed }: { exposures: Exposure[] }) {
             <td className="px-4 py-2">
               <Networks labels={exposure.reachable_from_networks_any_port} />
             </td>
-          </tr>
-        ))}
+          </tr>,
+          ...(debug ? [<AllowedBy key={`${key}-why`} exposure={exposure} columns={7} />] : []),
+          ];
+        })}
       </Table>
     </section>
   );

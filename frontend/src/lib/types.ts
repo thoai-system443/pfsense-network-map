@@ -268,6 +268,14 @@ export interface Exposure {
   reachable_from_internet: boolean;
   inbound_internet_ports: string;
   reachable_from_networks_any_port: string[];
+  allowed_by: AllowingRule[];
+}
+
+/** Why a row is on the list — shown when Debug is on. */
+export interface AllowingRule {
+  criterion: "networks" | "internet" | "from-internet" | "from-networks";
+  detail: string;
+  rule: RuleRef | null;
 }
 
 export interface PortAccess {

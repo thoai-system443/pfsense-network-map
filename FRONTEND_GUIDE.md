@@ -2,6 +2,7 @@
 
 | Version | Date | Changes |
 |---|---|---|
+| 1.11.0 | 2026-08-12 | Risk: ô Debug hiện rule đã cấp quyền cho từng dòng |
 | 1.10.0 | 2026-08-12 | Risk: mỗi IP/network một dòng thay vì mỗi object một dòng |
 | 1.9.0 | 2026-08-12 | Risk: xuất "Exposure by object" ra PDF qua print stylesheet |
 | 1.8.0 | 2026-08-12 | Risk: xuất "Exposure by object" ra CSV |
@@ -101,6 +102,9 @@ cho cả hai. Cột "Object" chỉ để biết địa chỉ đó thuộc về �
 
 Backend chỉ trả về địa chỉ có vi phạm, nên frontend **không lọc lại** — thêm bộ
 lọc ở đây sẽ là hai nguồn sự thật cho cùng một câu hỏi.
+
+Ô **Debug** chèn thêm một dòng dưới mỗi phát hiện, liệt kê rule đã cấp quyền cho
+từng tiêu chí. Dữ liệu luôn có sẵn trong response nên bật/tắt không gọi lại API.
 
 Nhãn network xuất hiện ở hai cột khác nhau ("tới các network này" và "được các
 network này vào"), nên trong test đừng tìm dòng bằng tên object: "LAN" vừa là tên

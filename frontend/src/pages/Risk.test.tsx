@@ -51,6 +51,10 @@ const report: RiskReport = {
       reachable_from_internet: false,
       inbound_internet_ports: "",
       reachable_from_networks_any_port: [],
+      allowed_by: [
+        { criterion: "internet", detail: "443", rule },
+        { criterion: "networks", detail: "DMZ", rule },
+      ],
     },
     {
       firewall: "fw-edge",
@@ -68,6 +72,7 @@ const report: RiskReport = {
       reachable_from_internet: true,
       inbound_internet_ports: "8443",
       reachable_from_networks_any_port: ["LAN"],
+      allowed_by: [{ criterion: "from-internet", detail: "8443", rule }],
     },
   ],
   deny_all: [
@@ -300,5 +305,25 @@ describe("exporting exposure by object", () => {
     expect(captured).toContain("DB_SERVER");
     expect(captured).not.toContain("GUEST");
     vi.unstubAllGlobals();
+  });
+});
+
+describe("the debug view", () => {
+  it("is off until asked for", async () => {
+    vi.spyOn(api, "getRiskReport").mockResolvedValue(report);
+    renderPage();
+    await screen.findByText("192.168.1.0/24");
+    expect(screen.queryByText(/reaches internet on/i)).not.toBeInTheDocument();
+  });
+
+  it("names the rule that allows each finding", async () => {
+    vi.spyOn(api, "getRiskReport").mockResolvedValue(report);
+    renderPage();
+    await screen.findByText("192.168.1.0/24");
+    await userEvent.click(screen.getByLabelText(/debug/i));
+
+    expect(screen.getByText(/reaches internet on/i)).toBeInTheDocument();
+    expect(screen.getAllByText(new RegExp(rule.descr)).length).toBeGreaterThan(0);
+    expect(screen.getByText(/reachable from internet on/i)).toBeInTheDocument();
   });
 });

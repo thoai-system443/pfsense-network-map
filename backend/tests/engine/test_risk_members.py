@@ -139,3 +139,56 @@ def test_a_host_does_not_reach_its_own_network():
     entry = findings(build(LAN_HOST_2, OUT_TO_ANYTHING))["10.0.0.5/32"]
     assert "LAN" not in entry.reaches_networks_any_port
     assert "DMZ" in entry.reaches_networks_any_port, "other networks are still reported"
+
+
+# --------------------------------------------------------------------------
+# A subnet is checked against the rules that name addresses inside it, not by
+# walking its addresses one at a time.
+# --------------------------------------------------------------------------
+
+ONE_HOST_DEEP_IN_THE_SUBNET = b"""<rule><type>pass</type><interface>lan</interface>
+  <ipprotocol>inet</ipprotocol><protocol>tcp</protocol>
+  <source><address>10.0.0.77</address></source>
+  <destination><any></any></destination>
+  <descr>only .77 goes out</descr></rule>"""
+
+
+def test_a_subnet_finds_a_host_the_first_address_would_miss():
+    """The rule names .77; the subnet object must not stay silent about it."""
+    found = findings(build(rules=ONE_HOST_DEEP_IN_THE_SUBNET))
+    assert "10.0.0.77/32" in found
+    assert found["10.0.0.77/32"].reaches_internet
+
+
+def test_the_quiet_rest_of_the_subnet_is_not_listed():
+    found = findings(build(rules=ONE_HOST_DEEP_IN_THE_SUBNET))
+    assert all(cidr == "10.0.0.77/32" or "10.0.0" not in cidr for cidr in found)
+
+
+def test_a_subnet_allowed_as_a_whole_is_reported_as_the_subnet():
+    """No rule singles anybody out, so there is nothing to split."""
+    rule = ONE_HOST_DEEP_IN_THE_SUBNET.replace(
+        b"<address>10.0.0.77</address>", b"<network>lan</network>"
+    )
+    found = findings(build(rules=rule))
+    assert "10.0.0.0/24" in found, f"expected the whole subnet, got {list(found)}"
+
+
+# --------------------------------------------------------------------------
+# Debug: which rule is doing the allowing.
+# --------------------------------------------------------------------------
+
+
+def test_a_finding_names_the_rule_that_allows_it():
+    entry = findings(build(rules=ONE_HOST_DEEP_IN_THE_SUBNET))["10.0.0.77/32"]
+    reasons = [a for a in entry.allowed_by if a.criterion == "internet"]
+    assert reasons, "the row must be able to say what allows it"
+    assert reasons[0].rule is not None
+    assert reasons[0].rule.descr == "only .77 goes out"
+
+
+def test_the_allowing_rule_is_named_for_inbound_findings_too():
+    entry = findings(build(DMZ_HOST, PUBLISHED))["10.10.20.50/32"]
+    reasons = [a for a in entry.allowed_by if a.criterion == "from-internet"]
+    assert reasons and reasons[0].rule is not None
+    assert reasons[0].rule.descr == "published"

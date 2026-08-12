@@ -2,6 +2,7 @@
 
 | Version | Date | Changes |
 |---|---|---|
+| 1.13.0 | 2026-08-12 | Risk: subnet cắt theo source của rule; mỗi phát hiện kèm rule cho phép |
 | 1.12.0 | 2026-08-12 | Risk: mỗi IP/network một dòng, 4 tiêu chí mới, cache trên workspace |
 | 1.11.0 | 2026-08-12 | Nhận diện `statepolicy`, `pflow`, `target_subnet` từ config thật |
 | 1.10.0 | 2026-08-11 | Search trả kết quả theo vùng: subnet, protocol, NAT theo tập, chặng theo tập |
@@ -339,6 +340,27 @@ Hai cạm bẫy đã mắc khi làm:
 2. **Traffic cùng subnet không đi qua firewall.** Không loại network chứa chính
    địa chỉ đó thì mọi rule allow-any biến thành phát hiện "host này tới được
    network nó đang nằm trong". `_sits_inside()` loại chúng.
+
+### Subnet: đi ngược từ rule, không duyệt từng địa chỉ
+
+Một `/24` có 254 địa chỉ, nhưng chỉ những địa chỉ **được rule gọi tên** mới có
+thể hành xử khác hàng xóm. `_rule_groups()` vì vậy cắt network tại biên các
+source của rule thay vì liệt kê từng IP: kết quả là các nhóm mà mọi thành viên
+chắc chắn giống nhau, nên một probe trả lời cho cả nhóm.
+
+Network không rule nào gọi tên riêng thì trả về nguyên vẹn, một nhóm — dòng báo
+cáo khi đó là chính `10.0.0.0/24` chứ không phải một danh sách host.
+
+Chỉ cắt khi rule phủ **một phần** nhóm. Rule phủ trọn hoặc không dính thì không
+phân biệt được thành viên nào với thành viên nào, nên bỏ qua. Đo trên `/24` có
+253 rule `/32`: 0,186s, ra đúng 253 dòng.
+
+### Vì sao một dòng có mặt trong danh sách
+
+`Exposure.allowed_by` mang danh sách `AllowingRule(criterion, detail, rule)` —
+mỗi tiêu chí kèm rule đã cấp quyền đó. Luôn tính, không đặt sau cờ debug: dữ liệu
+vốn đã nằm sẵn trong region của lượt duyệt, còn một phát hiện không truy được về
+rule nào thì người vận hành phải tự dựng lại bằng tay.
 
 Báo cáo được **cache trên workspace** (`Workspace.cached`). Config đã parse thì
 bất biến, nên thứ suy ra từ nó sống cùng workspace; nạp thêm firewall là sự kiện
